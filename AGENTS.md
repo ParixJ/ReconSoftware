@@ -5,6 +5,7 @@
 - Language paradigm: Javascript
 ### Frontend
 - React for conmponentized frontend
+- React-router
 - Zustand (state management)
 - Axios (API client)
 
