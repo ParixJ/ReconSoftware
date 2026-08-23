@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+server/data/*.sqlite*
+server/data/uploads/
+server/data/e2e-data/
+.env
+*.log

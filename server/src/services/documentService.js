@@ -1,0 +1,187 @@
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import { getDb } from "../db/database.js";
+import { AppError } from "../errors.js";
+import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../api/contracts.js";
+import { applyFieldMapping } from "../parsers/normalizers.js";
+import { parseUploadedFile } from "../parsers/index.js";
+import { jsonSafeParse } from "../parsers/utils.js";
+
+const FIELD_LABELS = Object.freeze({
+  counterpartyGstin: "Counterparty GSTIN",
+  tradeName: "Trade name",
+  invoiceNumber: "Invoice number",
+  taxableValue: "Taxable value",
+  igst: "IGST",
+  cgst: "CGST",
+  sgst: "SGST / UTGST",
+  cess: "Cess",
+});
+
+const REQUIRED_FIELD_GROUPS = Object.freeze({
+  gstr1: [["invoiceNumber"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
+  gstr2: [["invoiceNumber"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
+  gstr2b: [["invoiceNumber"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
+  gstr3b: [["taxableValue"], ["igst", "cgst", "sgst", "cess"]],
+});
+
+function mappingCoverage(parsed, mapping, documentType, preference) {
+  const sourceFields = parsed.sourceFields || [];
+  const sourceRows = parsed.sourceRows || [];
+  const builtInSchema = sourceFields.length === 0 && documentType !== "unknown";
+  const fieldMap = mapping.fieldMap || parsed.suggestedFieldMap || {};
+  const matchedFields = Object.entries(fieldMap)
+    .filter(([, source]) => source && sourceFields.includes(source))
+    .map(([canonical]) => canonical);
+  const groups = REQUIRED_FIELD_GROUPS[documentType] || [];
+  const missingGroups = documentType === "unknown"
+    ? [["documentType"], ["invoiceNumber"], ["taxableValue"], ["counterpartyGstin", "tradeName"]]
+    : groups.filter((group) => !group.some((field) => matchedFields.includes(field)));
+  const canRenderNormalized = builtInSchema || (groups.length > 0 && missingGroups.length === 0);
+  const hasOriginalFields = sourceFields.length > 0 && sourceRows.length > 0;
+  let viewMode = "normalized";
+  if (!canRenderNormalized) {
+    viewMode = !hasOriginalFields ? "hidden" : preference === "original" ? "original" : preference === "hidden" ? "hidden" : "prompt";
+  }
+  return {
+    canRenderNormalized,
+    builtInSchema,
+    hasOriginalFields,
+    matchedFields,
+    missingFields: missingGroups.map((group) => group.map((field) => FIELD_LABELS[field] || "Document type").join(" or ")),
+    viewMode,
+  };
+}
+
+function deserialize(row, includeParsed = false) {
+  if (!row) return null;
+  const document = {
+    id: row.id,
+    originalName: row.original_name,
+    mimeType: row.mime_type,
+    fileType: row.file_type,
+    documentType: row.document_type,
+    gstin: row.gstin,
+    returnPeriod: row.return_period,
+    status: row.status,
+    recordCount: row.record_count,
+    mapping: jsonSafeParse(row.mapping, {}),
+    anomalies: jsonSafeParse(row.anomalies, []),
+    viewPreference: row.view_preference || null,
+    createdAt: row.created_at,
+  };
+  if (includeParsed) {
+    document.parsed = jsonSafeParse(row.parsed_data, { rows: [], summary: {}, sourceFields: [], sourceRows: [] });
+    document.mappingCoverage = mappingCoverage(document.parsed, document.mapping, document.documentType, document.viewPreference);
+  }
+  return document;
+}
+
+function insertDocument(userId, file, parsed) {
+  const mapping = { documentType: parsed.documentType, gstin: parsed.gstin, returnPeriod: parsed.returnPeriod, fieldMap: parsed.suggestedFieldMap || {} };
+  const coverage = mappingCoverage(parsed, mapping, parsed.documentType, null);
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: userId,
+    original_name: file.originalname,
+    stored_name: file.filename,
+    mime_type: file.mimetype,
+    file_type: parsed.fileType,
+    document_type: parsed.documentType,
+    gstin: parsed.gstin,
+    return_period: parsed.returnPeriod,
+    status: parsed.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready",
+    record_count: parsed.rows.length,
+    parsed_data: JSON.stringify(parsed),
+    mapping: JSON.stringify(mapping),
+    anomalies: JSON.stringify(parsed.anomalies),
+    view_preference: null,
+    created_at: new Date().toISOString(),
+  };
+  getDb().prepare(`
+    INSERT INTO documents (
+      id, user_id, original_name, stored_name, mime_type, file_type, document_type,
+      gstin, return_period, status, record_count, parsed_data, mapping, anomalies, view_preference, created_at
+    ) VALUES (
+      @id, @user_id, @original_name, @stored_name, @mime_type, @file_type, @document_type,
+      @gstin, @return_period, @status, @record_count, @parsed_data, @mapping, @anomalies, @view_preference, @created_at
+    )
+  `).run(row);
+  return deserialize(row, true);
+}
+
+export async function createDocuments(userId, files) {
+  const outcomes = await Promise.all(files.map(async (file) => {
+    try {
+      const parsed = await parseUploadedFile(file.path, file.originalname, file.mimetype);
+      return { document: insertDocument(userId, file, parsed) };
+    } catch (error) {
+      await fs.unlink(file.path).catch(() => {});
+      return { error: { filename: file.originalname, code: error.code || "PARSE_FAILED", message: error.message || "The document could not be parsed." } };
+    }
+  }));
+  return {
+    documents: outcomes.flatMap((outcome) => outcome.document ? [outcome.document] : []),
+    errors: outcomes.flatMap((outcome) => outcome.error ? [outcome.error] : []),
+  };
+}
+
+export function listDocuments(userId) {
+  return getDb().prepare("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC").all(userId).map((row) => deserialize(row));
+}
+
+export function getDocumentRow(userId, id) {
+  const row = getDb().prepare("SELECT * FROM documents WHERE id = ? AND user_id = ?").get(id, userId);
+  if (!row) throw new AppError(404, "DOCUMENT_NOT_FOUND", "This document does not exist or is not available to your account.");
+  return row;
+}
+
+export function getDocument(userId, id) {
+  return deserialize(getDocumentRow(userId, id), true);
+}
+
+export function updateMapping(userId, id, input) {
+  const row = getDocumentRow(userId, id);
+  const parsed = jsonSafeParse(row.parsed_data, null);
+  if (!parsed) throw new AppError(422, "PARSED_DATA_MISSING", "The parsed document data is unavailable. Upload the source again.");
+
+  const documentType = String(input.documentType || "unknown").toLowerCase();
+  if (!DOCUMENT_TYPES.includes(documentType)) throw new AppError(400, "INVALID_DOCUMENT_TYPE", "Choose a supported GST return type.");
+  const gstin = String(input.gstin || "").trim().toUpperCase();
+  if (gstin && gstin.length > 15) throw new AppError(400, "INVALID_GSTIN", "GSTIN cannot be longer than 15 characters.");
+  const returnPeriod = String(input.returnPeriod || "").replace(/\D/g, "");
+  if (returnPeriod && !/^(0[1-9]|1[0-2])\d{4}$/.test(returnPeriod)) throw new AppError(400, "INVALID_PERIOD", "Return period must use MMYYYY format.");
+
+  const fieldMap = input.fieldMap && typeof input.fieldMap === "object" ? input.fieldMap : {};
+  for (const [canonical, source] of Object.entries(fieldMap)) {
+    if (!CANONICAL_FIELDS.includes(canonical)) throw new AppError(400, "INVALID_MAPPING_FIELD", `${canonical} is not a supported reconciliation field.`);
+    if (source && !parsed.sourceFields?.includes(source)) throw new AppError(400, "INVALID_SOURCE_FIELD", `${source} is not a source column in this document.`);
+  }
+  const mapping = { documentType, gstin: gstin || null, returnPeriod: returnPeriod || null, fieldMap };
+  const updated = applyFieldMapping(parsed, mapping);
+  const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
+  const status = updated.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready";
+  getDb().prepare(`
+    UPDATE documents SET document_type = ?, gstin = ?, return_period = ?, status = ?, record_count = ?,
+      parsed_data = ?, mapping = ?, anomalies = ? WHERE id = ? AND user_id = ?
+  `).run(updated.documentType, updated.gstin, updated.returnPeriod, status, updated.rows.length,
+    JSON.stringify(updated), JSON.stringify(mapping), JSON.stringify(updated.anomalies), id, userId);
+  return getDocument(userId, id);
+}
+
+export function updateViewPreference(userId, id, input) {
+  getDocumentRow(userId, id);
+  const mode = String(input.mode || "").toLowerCase();
+  if (!["original", "hidden"].includes(mode)) {
+    throw new AppError(400, "INVALID_VIEW_PREFERENCE", "Choose whether to render the original extracted columns or keep the table hidden.");
+  }
+  getDb().prepare("UPDATE documents SET view_preference = ? WHERE id = ? AND user_id = ?").run(mode, id, userId);
+  return getDocument(userId, id);
+}
+
+export function rowsForReconciliation(userId, ids) {
+  return ids.map((id) => {
+    const row = getDocumentRow(userId, id);
+    return { ...deserialize(row), parsed: jsonSafeParse(row.parsed_data, { rows: [], summary: {} }) };
+  });
+}

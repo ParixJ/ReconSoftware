@@ -1,0 +1,46 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { Router } from "express";
+import multer from "multer";
+import { config } from "../config.js";
+import { AppError } from "../errors.js";
+import { createDocuments, getDocument, listDocuments, updateMapping, updateViewPreference } from "../services/documentService.js";
+
+fs.mkdirSync(config.uploadDir, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => callback(null, config.uploadDir),
+    filename: (_req, _file, callback) => callback(null, crypto.randomUUID()),
+  }),
+  limits: { fileSize: config.maxUploadBytes, files: 10 },
+});
+
+const router = Router();
+
+router.get("/", (req, res) => res.json({ documents: listDocuments(req.user.id) }));
+
+router.post("/upload", upload.array("files", 10), async (req, res, next) => {
+  try {
+    if (!req.files?.length) throw new AppError(400, "FILES_REQUIRED", "Choose at least one PDF, XLSX, CSV, or JSON document.");
+    const result = await createDocuments(req.user.id, req.files);
+    res.status(result.documents.length ? 201 : 422).json(result);
+  } catch (error) { next(error); }
+});
+
+router.get("/:id", (req, res, next) => {
+  try { res.json({ document: getDocument(req.user.id, req.params.id) }); }
+  catch (error) { next(error); }
+});
+
+router.put("/:id/mapping", (req, res, next) => {
+  try { res.json({ document: updateMapping(req.user.id, req.params.id, req.body || {}) }); }
+  catch (error) { next(error); }
+});
+
+router.put("/:id/view-preference", (req, res, next) => {
+  try { res.json({ document: updateViewPreference(req.user.id, req.params.id, req.body || {}) }); }
+  catch (error) { next(error); }
+});
+
+export default router;
