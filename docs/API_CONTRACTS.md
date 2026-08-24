@@ -17,6 +17,7 @@ Authentication uses the `gst_session` HTTP-only cookie.
 | GET | `/api/documents` | Yes | → `{documents[]}` without parsed rows |
 | POST | `/api/documents/upload` | Yes | multipart `files` (1–10) → `{documents[], errors[]}` |
 | GET | `/api/documents/:id` | Yes | → `{document}` including normalized rows/source fields |
+| DELETE | `/api/documents/:id` | Yes | Removes the owned document metadata and uploaded file → `204` |
 | PUT | `/api/documents/:id/mapping` | Yes | `{documentType,gstin,returnPeriod,fieldMap}` → `{document}` |
 | PUT | `/api/documents/:id/view-preference` | Yes | `{mode:"original"|"hidden"}` → `{document}` |
 | POST | `/api/reconciliations` | Yes | `{documentIds,amountTolerance,dateToleranceDays}` → `{reconciliation}` |

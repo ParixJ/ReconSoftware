@@ -69,27 +69,20 @@ export async function authenticate(input) {
   return publicUser(user);
 }
 
-export function createSession(userId) {
-  const token = crypto.randomBytes(32).toString("base64url");
-  const now = new Date().toISOString();
-  const expiresAt = Date.now() + config.sessionTtlMs;
-  const db = getDb();
-  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(Date.now());
-  db.prepare("INSERT INTO sessions (id_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
-    .run(sessionHash(token), userId, expiresAt, now);
-  return { token, expiresAt };
-}
-
-export function resolveSession(token) {
-  if (!token) return null;
+export function resolveSession(req) {
+  if (!req?.cookies?.[config.sessionCookie] || !req?.session?.userId) return null;
   const row = getDb().prepare(`
-    SELECT u.id, u.email, u.name, u.created_at, s.expires_at
-    FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.id_hash = ? AND s.expires_at > ?
-  `).get(sessionHash(token), Date.now());
+    SELECT * from users where id = ?
+  `).get(req.session.userId);
+  
   return publicUser(row);
+  
 }
 
-export function removeSession(token) {
-  if (token) getDb().prepare("DELETE FROM sessions WHERE id_hash = ?").run(sessionHash(token));
+export function removeSession(token, next) {
+  if (token){
+    res.session.destroy((error) => {
+      return next(new Error('Could not logout'))
+    })
+  }
 }

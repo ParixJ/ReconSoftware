@@ -16,5 +16,24 @@ export const config = {
   maxUploadBytes: 20 * 1024 * 1024,
   sessionCookie: "gst_session",
   sessionTtlMs: 7 * 24 * 60 * 60 * 1000,
+  sessionSecret: process.env.SESSION_SECRET || '7a23edca270f81cd2b1b62bbe6e0ec1f7db66b351c474c76701f30e09a47390d',
+  express_session: process.env.EXPRESS_SESSION||true  
 };
 
+export function cookieOptions(maxAge, man=false) {
+  const cookie = {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: config.nodeEnv === "production",
+      path: "/",
+      maxAge,
+  };
+  return !config.express_session || man?
+  cookie:{
+    name: config.sessionCookie,
+    resave: false,
+    saveUninitialized: false,
+    secret: config.sessionSecret,
+    cookie
+  }
+}

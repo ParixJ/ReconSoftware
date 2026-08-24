@@ -1,9 +1,9 @@
-import { AlertTriangle, Check, FileCog, FileJson2, FileSpreadsheet, FileText, Inbox } from "lucide-react";
+import { AlertTriangle, Check, FileCog, FileJson2, FileSpreadsheet, FileText, Inbox, Trash2 } from "lucide-react";
 import { TYPE_LABELS, dateTime, period } from "../utils/format.js";
 
 const fileIcons = { json: FileJson2, xlsx: FileSpreadsheet, csv: FileSpreadsheet, pdf: FileText };
 
-export default function DocumentLibrary({ documents, selectedIds, onToggle, onMap }) {
+export default function DocumentLibrary({ documents, selectedIds, onToggle, onMap, onDelete, deletingId }) {
   return (
     <section className="panel document-panel" id="documents" aria-labelledby="documents-heading">
       <div className="section-heading">
@@ -31,7 +31,12 @@ export default function DocumentLibrary({ documents, selectedIds, onToggle, onMa
                     <td className="number-cell">{document.recordCount.toLocaleString("en-IN")}</td>
                     <td>{issues ? <span className="status-pill status-warning"><AlertTriangle size={13} />{issues} {issues === 1 ? "issue" : "issues"}</span> : <span className="status-pill status-success"><Check size={13} />Ready</span>}</td>
                     <td><span className="muted-cell">{dateTime(document.createdAt)}</span></td>
-                    <td className="action-cell"><button className="text-button" onClick={() => onMap(document.id)}><FileCog size={15} />Modify mapping</button></td>
+                    <td className="action-cell">
+                      <div className="document-actions">
+                        <button className="text-button" onClick={() => onMap(document.id)} disabled={deletingId === document.id}><FileCog size={15} />Modify mapping</button>
+                        <button className="text-button text-button-danger" onClick={() => onDelete(document)} disabled={deletingId === document.id} aria-label={`Delete ${document.originalName}`}><Trash2 size={15} />{deletingId === document.id ? "Deleting…" : "Delete"}</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -42,4 +47,3 @@ export default function DocumentLibrary({ documents, selectedIds, onToggle, onMa
     </section>
   );
 }
-

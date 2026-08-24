@@ -21,6 +21,7 @@ export const documentsApi = {
     [...files].forEach((file) => form.append("files", file));
     return api.post("/documents/upload", form, { onUploadProgress });
   },
+  remove: (id) => api.delete(`/documents/${id}`),
   updateMapping: (id, mapping) => api.put(`/documents/${id}/mapping`, mapping),
   updateViewPreference: (id, mode) => api.put(`/documents/${id}/view-preference`, { mode }),
 };

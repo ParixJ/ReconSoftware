@@ -5,7 +5,7 @@ import { Router } from "express";
 import multer from "multer";
 import { config } from "../config.js";
 import { AppError } from "../errors.js";
-import { createDocuments, getDocument, listDocuments, updateMapping, updateViewPreference } from "../services/documentService.js";
+import { createDocuments, deleteDocument, getDocument, listDocuments, updateMapping, updateViewPreference } from "../services/documentService.js";
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
 const upload = multer({
@@ -31,6 +31,13 @@ router.post("/upload", upload.array("files", 10), async (req, res, next) => {
 router.get("/:id", (req, res, next) => {
   try { res.json({ document: getDocument(req.user.id, req.params.id) }); }
   catch (error) { next(error); }
+});
+
+router.delete("/:id", async (req, res, next) => {
+  try {
+    await deleteDocument(req.user.id, req.params.id);
+    res.status(204).end();
+  } catch (error) { next(error); }
 });
 
 router.put("/:id/mapping", (req, res, next) => {

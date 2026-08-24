@@ -103,6 +103,16 @@ test("authenticated API isolates documents and runs the full three-return flow",
   const otherList = await fetch(`${base}/documents`, { headers: { cookie: otherCookie } });
   assert.equal(otherList.status, 200);
   assert.equal((await otherList.json()).documents.length, 0);
+
+  const storedFilesBeforeDelete = fs.readdirSync(process.env.GST_UPLOAD_DIR);
+  const otherDeleteResponse = await fetch(`${base}/documents/${unmappedId}`, { method: "DELETE", headers: { cookie: otherCookie } });
+  assert.equal(otherDeleteResponse.status, 404);
+  assert.deepEqual(fs.readdirSync(process.env.GST_UPLOAD_DIR), storedFilesBeforeDelete);
+
+  const deleteResponse = await fetch(`${base}/documents/${unmappedId}`, { method: "DELETE", headers: { cookie } });
+  assert.equal(deleteResponse.status, 204);
+  assert.equal((await fetch(`${base}/documents/${unmappedId}`, { headers: { cookie } })).status, 404);
+  assert.equal(fs.readdirSync(process.env.GST_UPLOAD_DIR).length, storedFilesBeforeDelete.length - 1);
 });
 
 test.after(() => {

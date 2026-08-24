@@ -61,6 +61,12 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByText("20 / 23")).toBeVisible();
   await expect(page.getByText("Suggested review sequence")).toBeVisible();
   await page.screenshot({ path: path.join(root, "test-results/gst-reconciliation-flow.png"), fullPage: true });
+
+  const gstr1Row = page.getByRole("row").filter({ hasText: "gstr1-march-2026.json" });
+  page.once("dialog", (dialog) => dialog.accept());
+  await gstr1Row.getByRole("button", { name: "Delete gstr1-march-2026.json" }).click();
+  await expect(page.getByText("Document deleted")).toBeVisible();
+  await expect(gstr1Row).toHaveCount(0);
 });
 
 test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {

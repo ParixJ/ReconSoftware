@@ -12,6 +12,7 @@
     "cookie-parser": "^1.4.7",
     "csv-parse": "^6.1.0",
     "express": "^5.1.0",
+    "express-session": "^1.19.0",
     "multer": "^2.0.2",
     "pdf-parse": "1.1.1",
     "read-excel-file": "^9.3.10"

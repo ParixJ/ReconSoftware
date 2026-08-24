@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
+import { config } from "../config.js";
 import { getDb } from "../db/database.js";
 import { AppError } from "../errors.js";
 import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../api/contracts.js";
@@ -138,6 +140,25 @@ export function getDocumentRow(userId, id) {
 
 export function getDocument(userId, id) {
   return deserialize(getDocumentRow(userId, id), true);
+}
+
+export async function deleteDocument(userId, id) {
+  const row = getDocumentRow(userId, id);
+  const filePath = path.resolve(config.uploadDir, row.stored_name);
+  const relativePath = path.relative(config.uploadDir, filePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new AppError(500, "INVALID_STORED_FILE_PATH", "The stored document path is invalid.");
+  }
+
+  try {
+    await fs.unlink(filePath);
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw new AppError(500, "DOCUMENT_FILE_DELETE_FAILED", "The uploaded file could not be removed from storage.");
+    }
+  }
+
+  getDb().prepare("DELETE FROM documents WHERE id = ? AND user_id = ?").run(id, userId);
 }
 
 export function updateMapping(userId, id, input) {

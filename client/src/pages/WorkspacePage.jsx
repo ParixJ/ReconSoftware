@@ -25,6 +25,7 @@ export default function WorkspacePage() {
   const [running, setRunning] = useState(false);
   const [savingMapping, setSavingMapping] = useState(false);
   const [savingViewDecision, setSavingViewDecision] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [tolerances, setTolerances] = useState({ amountTolerance: 1, dateToleranceDays: 0 });
 
@@ -113,6 +114,29 @@ export default function WorkspacePage() {
     } finally { setSavingViewDecision(false); }
   };
 
+  const deleteUploadedDocument = async (document) => {
+    if (!window.confirm(`Delete ${document.originalName}? This will permanently remove the uploaded file.`)) return;
+    setDeletingId(document.id);
+    setNotice(null);
+    try {
+      await documentsApi.remove(document.id);
+      const remainingSelectedIds = selectedIds.filter((id) => id !== document.id);
+      setDocuments((current) => current.filter((item) => item.id !== document.id));
+      setSelectedIds((current) => current.filter((id) => id !== document.id));
+      setActiveId((current) => current === document.id ? remainingSelectedIds[0] || null : current);
+      setDetails((current) => {
+        const next = { ...current };
+        delete next[document.id];
+        return next;
+      });
+      setNotice({ tone: "success", title: "Document deleted", message: `${document.originalName} was removed from the workspace and server storage.` });
+    } catch (error) {
+      setNotice({ tone: "danger", title: "Document could not be deleted", message: errorMessage(error) });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (mappingMatch) return <MappingPanel document={details[mappingMatch.params.documentId]} onClose={() => navigate("/workspace")} onSave={saveMapping} saving={savingMapping} />;
 
   return (
@@ -124,7 +148,7 @@ export default function WorkspacePage() {
         {loading ? <div className="panel loading-block"><span className="spinner" />Loading documents…</div> : (
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
-            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onMap={(id) => navigate(`/workspace/mapping/${id}`)} />
+            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onDelete={deleteUploadedDocument} deletingId={deletingId} />
             <ReconciliationControls selectedCount={selectedIds.length} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
             <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
             <ReconciliationResults reconciliation={latest} onModifyMapping={(id) => navigate(`/workspace/mapping/${id}`)} />
