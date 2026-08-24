@@ -24,10 +24,6 @@ export async function verifyPassword(password, stored) {
   return digest.length === expected.length && crypto.timingSafeEqual(digest, expected);
 }
 
-function sessionHash(token) {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
-
 export function validateCredentials({ name, email, password }, registering = false) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
@@ -76,7 +72,6 @@ export function resolveSession(req) {
   `).get(req.session.userId);
   
   return publicUser(row);
-  
 }
 
 export function removeSession(token, next) {
