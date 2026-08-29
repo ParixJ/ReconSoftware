@@ -25,7 +25,7 @@ router.get("/me", requireAuth, (req, res) => res.json({ user: req.user }));
 
 router.post("/logout", (req, res, next) => {
   removeSession(req.session?.[config.sessionCookie]);
-  res.clearCookie(config.sessionCookie, cookieOptions(0, true));
+  res.clearCookie(config.sessionCookie, cookieOptions(0, config.express_session));
   res.status(204).end();
 });
 
