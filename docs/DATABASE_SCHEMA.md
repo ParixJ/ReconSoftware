@@ -23,7 +23,7 @@ SQLite runs with foreign keys and write-ahead logging enabled.
 
 ## `documents`
 
-Stores owner, safe storage name, detected file/return type, GSTIN, period, status, record count, normalized JSON, mapping JSON, anomaly JSON, and the optional original/hidden document-view preference. `user_id` is indexed.
+Stores owner, safe storage name, detected file/document type, GSTIN, period, status, record count, normalized JSON, mapping JSON, anomaly JSON, and the optional original/hidden document-view preference. `user_id` is indexed. Multi-period sales registers keep `return_period` null at the document level and store their monthly control totals inside the normalized JSON `periods` object.
 
 ## `reconciliations`
 

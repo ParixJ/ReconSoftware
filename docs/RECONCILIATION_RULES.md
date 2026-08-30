@@ -2,6 +2,12 @@
 
 This release performs deterministic review checks; it does not file or modify a GST return.
 
+## Sales register to GSTR-1
+
+When a sales register is selected, its net taxable-outward control totals are compared with GSTR-1 for taxable value and each tax head. The register parser groups dated ledger rows by `MMYYYY`, separates B2B/B2C controls, and treats recognized credit entries as signed adjustments. For a multi-period workbook, only the bucket matching the single selected GSTR-1/GSTR-3B period is used. A selected register without that period is reported as a blocking data exception rather than compared as zero.
+
+The books check is a control-total comparison. It does not claim invoice-level matching where a PDF return provides only section summaries.
+
 ## GSTR-1 to GSTR-3B liability
 
 The engine compares these official table relationships:

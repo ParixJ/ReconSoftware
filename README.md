@@ -1,6 +1,6 @@
 # GST Reconciliation
 
-A focused auditor workspace for ingesting GST returns, reviewing normalized document data, correcting field mappings, and reconciling GSTR-1 liabilities with GSTR-3B (plus GSTR-2B ITC checks when selected).
+A focused auditor workspace for ingesting GST returns and sales registers, reviewing normalized document data, correcting field mappings, and reconciling books with GSTR-1 and GSTR-3B (plus GSTR-2B ITC checks when selected).
 
 ## Run locally
 
@@ -26,9 +26,11 @@ The browser test creates its own auditor account and uploads the fixtures in `sa
 ## Supported input
 
 - GST portal JSON (including GSTR-1, GSTR-2B and GSTR-3B structures)
-- `.xlsx` workbooks
+- `.xlsx` GST workbooks and sales registers
 - `.csv` tables
-- text-based PDF returns, extracted with a dedicated PDF parser
+- text-based GSTR-1 and GSTR-3B PDFs, extracted with dedicated return parsers
+
+Sales-register workbooks may contain heading rows before the ledger header. Dated rows are grouped by return period, and credit notes/credit entries are retained as signed adjustments. Image-only PDFs require OCR before upload.
 
 If extracted columns do not satisfy the fixed reconciliation schema, the document viewer asks whether to render them exactly as extracted or keep the table hidden. The choice is stored with the document and can be changed later.
 

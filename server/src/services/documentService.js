@@ -25,12 +25,13 @@ const REQUIRED_FIELD_GROUPS = Object.freeze({
   gstr2: [["invoiceNumber"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
   gstr2b: [["invoiceNumber"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
   gstr3b: [["taxableValue"], ["igst", "cgst", "sgst", "cess"]],
+  salesRegister: [["invoiceDate"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
 });
 
 function mappingCoverage(parsed, mapping, documentType, preference) {
   const sourceFields = parsed.sourceFields || [];
   const sourceRows = parsed.sourceRows || [];
-  const builtInSchema = sourceFields.length === 0 && documentType !== "unknown";
+  const builtInSchema = parsed.builtInSchema === true || (sourceFields.length === 0 && documentType !== "unknown");
   const fieldMap = mapping.fieldMap || parsed.suggestedFieldMap || {};
   const matchedFields = Object.entries(fieldMap)
     .filter(([, source]) => source && sourceFields.includes(source))
@@ -166,7 +167,10 @@ export function updateMapping(userId, id, input) {
   const parsed = jsonSafeParse(row.parsed_data, null);
   if (!parsed) throw new AppError(422, "PARSED_DATA_MISSING", "The parsed document data is unavailable. Upload the source again.");
 
-  const documentType = String(input.documentType || "unknown").toLowerCase();
+  const requestedDocumentType = String(input.documentType || "unknown");
+  const documentType = requestedDocumentType.toLowerCase().replace(/_/g, "") === "salesregister"
+    ? "salesRegister"
+    : requestedDocumentType.toLowerCase();
   if (!DOCUMENT_TYPES.includes(documentType)) throw new AppError(400, "INVALID_DOCUMENT_TYPE", "Choose a supported GST return type.");
   const gstin = String(input.gstin || "").trim().toUpperCase();
   if (gstin && gstin.length > 15) throw new AppError(400, "INVALID_GSTIN", "GSTIN cannot be longer than 15 characters.");

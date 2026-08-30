@@ -172,6 +172,7 @@ tbody tr:hover td { background: #fafbfa; }
 .type-gstr1 { color: #315f7a; background: #e7f0f3; border-color: #c2d7df; }
 .type-gstr2, .type-gstr2b { color: #654f18; background: #f6efd9; border-color: #e5d49e; }
 .type-gstr3b { color: var(--accent); background: var(--accent-subtle); border-color: #c7ddcf; }
+.type-salesRegister { color: #5b4a74; background: #eee9f4; border-color: #d7cce4; }
 .type-unknown { color: var(--danger); background: #f7e8e8; border-color: #e8c4c4; }
 .status-success { color: var(--success); background: #e6f1ea; border-color: #c5ddcd; }
 .status-warning { color: var(--warning); background: #f6efd9; border-color: #e5d49e; }
@@ -200,7 +201,7 @@ tbody tr:hover td { background: #fafbfa; }
 .document-tab strong { font-size: 11px; }
 .document-tab small { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .tab-dot { width: 7px; height: 7px; background: var(--text-disabled); border-radius: 50%; }
-.tab-gstr1 { background: var(--info); }.tab-gstr2,.tab-gstr2b { background: var(--warning); }.tab-gstr3b { background: var(--success); }
+.tab-gstr1 { background: var(--info); }.tab-gstr2,.tab-gstr2b { background: var(--warning); }.tab-gstr3b { background: var(--success); }.tab-salesRegister { background: #70588e; }
 .tab-close { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 4px; }
 .tab-close:hover { color: var(--danger); background: #f7e8e8; }
 .tab-content { min-height: 260px; }
@@ -256,6 +257,7 @@ tbody tr:hover td { background: #fafbfa; }
 .result-panel { overflow: hidden; }
 .result-table-scroll { max-height: 620px; }
 .result-table-scroll table { min-width: 1260px; }
+.comparison-value small { display: block; margin-bottom: 2px; color: var(--text-secondary); font-size: 9px; font-weight: 600; }
 .mismatch-row td { background: #fffdf7; }
 .mismatch-row:hover td { background: #fbf6e8; }
 .difference-positive { color: var(--danger); }.difference-negative { color: var(--warning); }.difference-zero { color: var(--success); }

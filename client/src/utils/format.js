@@ -3,6 +3,7 @@ export const TYPE_LABELS = {
   gstr2: "GSTR-2",
   gstr2b: "GSTR-2B",
   gstr3b: "GSTR-3B",
+  salesRegister: "Sales register",
   unknown: "Needs mapping",
 };
 

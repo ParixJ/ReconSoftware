@@ -35,7 +35,7 @@ export default function MappingPanel({ document, onClose, onSave, saving }) {
           <div className="section-heading"><div><h2>Return identity</h2><p>These values are used to group the client and filing period.</p></div><WandSparkles size={20} /></div>
           {error ? <Notice tone="danger" title="Mapping was not saved">{error}</Notice> : null}
           <div className="form-grid">
-            <label className="field"><span>Document type</span><select name="documentType" value={form.documentType} onChange={update}><option value="unknown">Choose return type</option><option value="gstr1">GSTR-1</option><option value="gstr2">GSTR-2</option><option value="gstr2b">GSTR-2B</option><option value="gstr3b">GSTR-3B</option></select></label>
+            <label className="field"><span>Document type</span><select name="documentType" value={form.documentType} onChange={update}><option value="unknown">Choose document type</option><option value="salesRegister">Sales register</option><option value="gstr1">GSTR-1</option><option value="gstr2">GSTR-2</option><option value="gstr2b">GSTR-2B</option><option value="gstr3b">GSTR-3B</option></select></label>
             <label className="field"><span>Client GSTIN</span><input name="gstin" value={form.gstin} onChange={update} maxLength={15} placeholder="24ABCDE1234F1Z5" /></label>
             <label className="field"><span>Return period</span><input name="returnPeriod" value={form.returnPeriod} onChange={update} inputMode="numeric" maxLength={6} placeholder="MMYYYY" /><small>Use six digits, for example 032026.</small></label>
           </div>

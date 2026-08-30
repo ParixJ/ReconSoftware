@@ -24,4 +24,6 @@ Authentication uses the `gst_session` HTTP-only cookie.
 | GET | `/api/reconciliations` | Yes | → `{reconciliations[]}` |
 | GET | `/api/reconciliations/:id` | Yes | → `{reconciliation}` |
 
-Supported `documentType` values are `gstr1`, `gstr2`, `gstr2b`, `gstr3b`, and `unknown`. `fieldMap` keys are restricted to the server's canonical columns.
+Supported `documentType` values are `gstr1`, `gstr2`, `gstr2b`, `gstr3b`, `salesRegister`, and `unknown`. `fieldMap` keys are restricted to the server's canonical columns.
+
+`POST /api/reconciliations` requires at least one GSTR-1 and one GSTR-3B. Selected `salesRegister` documents add books-to-GSTR-1 checks for the common return period; selected GSTR-2/GSTR-2B documents add ITC checks. Each comparison identifies its `sourceLabel` and `filedLabel` because the report can contain both books-to-GSTR-1 and return-to-GSTR-3B comparisons.

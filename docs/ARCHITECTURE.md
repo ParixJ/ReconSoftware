@@ -31,9 +31,11 @@ server/src
 
 ## File processing
 
-Multer streams uploads to disk with generated names. The parser then inspects file signatures/content and uses a format-specific parser. The normalized representation and anomalies are stored transactionally with document metadata. Original filenames are display metadata only and are never used as storage paths.
+Multer streams uploads to disk with generated names. The parser then inspects file signatures/content and uses a format-specific parser. GSTR-1 and GSTR-3B PDFs are routed to independent table parsers after text extraction. XLSX workbooks with a recognized ledger header are parsed as sales registers, with dated rows grouped into monthly control totals and credit entries kept as signed adjustments. The normalized representation and anomalies are stored transactionally with document metadata. Original filenames are display metadata only and are never used as storage paths.
 
 For tabular or text sources, the backend also records mapping coverage. If minimum reconciliation fields are missing, normalized rendering is blocked until the user either completes the mapping, explicitly renders the original extracted columns, or keeps the document table hidden. That preference is persisted per document.
+
+The reconciliation service always requires GSTR-1 and GSTR-3B. A selected sales register adds books-to-GSTR-1 taxable-outward checks for the return period represented by the selected returns; a multi-period register contributes only its matching monthly bucket. GSTR-2B remains optional and adds ITC checks.
 
 ## Security model
 

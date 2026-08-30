@@ -1,4 +1,4 @@
-export const DOCUMENT_TYPES = Object.freeze(["gstr1", "gstr2", "gstr2b", "gstr3b", "unknown"]);
+export const DOCUMENT_TYPES = Object.freeze(["gstr1", "gstr2", "gstr2b", "gstr3b", "salesRegister", "unknown"]);
 
 export const CANONICAL_FIELDS = Object.freeze([
   "counterpartyGstin",

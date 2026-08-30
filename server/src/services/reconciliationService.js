@@ -26,7 +26,23 @@ function aggregateSummary(documents, category) {
   return total;
 }
 
-function comparison({ table, label, measure, left, right, tolerance, kind = "liability" }) {
+function salesRegisterSummaryForPeriod(documents, returnPeriod) {
+  const total = emptyMoney();
+  const includedDocumentIds = [];
+  for (const document of documents) {
+    const periodSummary = document.parsed.periods?.[returnPeriod]?.net;
+    const singlePeriodSummary = !document.parsed.periods && document.returnPeriod === returnPeriod
+      ? document.parsed.summary?.taxableOutward
+      : null;
+    const summary = periodSummary || singlePeriodSummary;
+    if (!summary) continue;
+    addMoney(total, summary);
+    includedDocumentIds.push(document.id);
+  }
+  return { total, includedDocumentIds };
+}
+
+function comparison({ table, label, measure, left, right, tolerance, kind = "liability", sourceLabel = "GSTR-1", filedLabel = "GSTR-3B" }) {
   const difference = asNumber(left) - asNumber(right);
   const matched = Math.abs(difference) <= tolerance;
   let risk = "none";
@@ -43,9 +59,15 @@ function comparison({ table, label, measure, left, right, tolerance, kind = "lia
   } else if (!matched && kind === "itc") {
     risk = "medium";
     suggestion = "Available ITC exceeds the claim. Check deferred credits, reversals, imports, and timing differences.";
+  } else if (!matched && kind === "books" && difference > 0) {
+    risk = "high";
+    suggestion = "The sales register is higher than GSTR-1. Review invoices, debit notes, and timing items that may be missing from the filed return.";
+  } else if (!matched && kind === "books") {
+    risk = "medium";
+    suggestion = "GSTR-1 is higher than the sales register. Review amendments, credit notes, mapping, and entries posted outside the selected books extract.";
   }
   return {
-    id: `${table}-${measure}`,
+    id: `${kind === "books" ? "books-" : ""}${table}-${measure}`,
     table,
     label,
     measure,
@@ -57,7 +79,28 @@ function comparison({ table, label, measure, left, right, tolerance, kind = "lia
     risk,
     suggestion,
     kind,
+    sourceLabel,
+    filedLabel,
   };
+}
+
+function salesRegisterPeriodExceptions(documents, returnPeriod, includedDocumentIds) {
+  if (!documents.length) return [];
+  if (!returnPeriod) return [{
+    code: "BOOKS_RECONCILIATION_PERIOD_AMBIGUOUS",
+    severity: "error",
+    message: "A single GSTR-1/GSTR-3B return period is required before the sales register can be compared.",
+    suggestion: "Select returns for one matching period, then run the books comparison again.",
+  }];
+  const included = new Set(includedDocumentIds);
+  return documents.filter((document) => !included.has(document.id)).map((document) => ({
+    code: "BOOKS_PERIOD_NOT_FOUND",
+    severity: "error",
+    documentId: document.id,
+    documentName: document.originalName,
+    message: `${document.originalName} has no sales-register totals for ${returnPeriod}.`,
+    suggestion: "Upload a register containing the selected return period or remove this file from the reconciliation.",
+  }));
 }
 
 function parseInvoiceDate(value) {
@@ -133,11 +176,29 @@ export function runReconciliation(userId, input) {
   const gstr1 = documents.filter((item) => item.documentType === "gstr1");
   const gstr3b = documents.filter((item) => item.documentType === "gstr3b");
   const gstr2b = documents.filter((item) => item.documentType === "gstr2b" || item.documentType === "gstr2");
+  const salesRegisters = documents.filter((item) => item.documentType === "salesRegister");
   if (!gstr1.length || !gstr3b.length) {
-    throw new AppError(422, "REQUIRED_RETURNS_MISSING", "Select at least one GSTR-1 and one GSTR-3B document. GSTR-2B is optional for ITC checks.");
+    throw new AppError(422, "REQUIRED_RETURNS_MISSING", "Select at least one GSTR-1 and one GSTR-3B document. Sales registers and GSTR-2B are optional additional checks.");
   }
 
   const comparisons = [];
+  const filedPeriods = [...new Set([...gstr1, ...gstr3b].map((document) => document.returnPeriod).filter(Boolean))];
+  const comparisonPeriod = filedPeriods.length === 1 ? filedPeriods[0] : null;
+  const booksForPeriod = salesRegisterSummaryForPeriod(salesRegisters, comparisonPeriod);
+  if (booksForPeriod.includedDocumentIds.length) {
+    const filed = aggregateSummary(gstr1, "taxableOutward");
+    for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
+      table: "Books to GSTR-1",
+      label: "Taxable outward supplies",
+      measure,
+      left: booksForPeriod.total[measure],
+      right: filed[measure],
+      tolerance: amountTolerance,
+      kind: "books",
+      sourceLabel: "Sales register",
+      filedLabel: "GSTR-1",
+    }));
+  }
   for (const definition of LIABILITY_DEFINITIONS) {
     const source = aggregateSummary(gstr1, definition.category);
     const filed = aggregateSummary(gstr3b, definition.category);
@@ -156,6 +217,7 @@ export function runReconciliation(userId, input) {
     for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
       table: "3.1(d)", label: "Inward supplies liable to reverse charge", measure,
       left: reverseChargeSource[measure], right: reverseChargeFiled[measure], tolerance: amountTolerance,
+      sourceLabel: "GSTR-2/2B", filedLabel: "GSTR-3B",
     }));
     const available = aggregateSummary(gstr2b, "itcAvailable");
     addMoney(available, reverseChargeSource);
@@ -163,10 +225,12 @@ export function runReconciliation(userId, input) {
     for (const measure of ["igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
       table: "4(A)", label: "Input tax credit", measure,
       left: available[measure], right: claimed[measure], tolerance: amountTolerance, kind: "itc",
+      sourceLabel: "GSTR-2/2B", filedLabel: "GSTR-3B",
     }));
   }
 
-  const exceptions = [...identityExceptions(documents), ...dateExceptions(documents, dateToleranceDays)];
+  const booksExceptions = salesRegisterPeriodExceptions(salesRegisters, comparisonPeriod, booksForPeriod.includedDocumentIds);
+  const exceptions = [...identityExceptions(documents), ...booksExceptions, ...dateExceptions(documents, dateToleranceDays)];
   const mismatches = comparisons.filter((item) => item.status === "mismatch");
   const highRisk = mismatches.filter((item) => item.risk === "high").length + exceptions.filter((item) => item.severity === "error").length;
   const suggestions = [...new Set([...mismatches.map((item) => item.suggestion), ...exceptions.map((item) => item.suggestion).filter(Boolean)])];
@@ -185,7 +249,7 @@ export function runReconciliation(userId, input) {
     comparisons,
     exceptions,
     suggestions,
-    methodology: "GSTR-1 liability tables mapped to GSTR-3B 3.1(a/b/c/e); optional GSTR-2B ITC mapped to GSTR-3B 4(A).",
+    methodology: `${salesRegisters.length ? "Sales-register taxable outward totals mapped to GSTR-1; " : ""}GSTR-1 liability tables mapped to GSTR-3B 3.1(a/b/c/e); optional GSTR-2B ITC mapped to GSTR-3B 4(A).`,
   };
   const status = mismatches.length || exceptions.length ? "needs_review" : "matched";
   const row = {

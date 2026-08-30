@@ -7,7 +7,7 @@ function Metric({ label, value, detail, tone = "neutral" }) {
 
 export default function ReconciliationResults({ reconciliation, onModifyMapping }) {
   if (!reconciliation) return (
-    <section className="panel results-empty" id="results"><ClipboardCheck size={30} /><div><h2>No reconciliation run yet</h2><p>Select GSTR-1 and GSTR-3B files, then run the comparison. Optional GSTR-2B selection adds ITC checks.</p></div></section>
+    <section className="panel results-empty" id="results"><ClipboardCheck size={30} /><div><h2>No reconciliation run yet</h2><p>Select GSTR-1 and GSTR-3B files, then run the comparison. A sales register adds books checks; GSTR-2B adds ITC checks.</p></div></section>
   );
   const { result } = reconciliation;
   const review = reconciliation.status === "needs_review";
@@ -24,13 +24,13 @@ export default function ReconciliationResults({ reconciliation, onModifyMapping 
         <Metric label="High priority" value={result.summary.highRisk} detail="Resolve before relying on return" tone={result.summary.highRisk ? "danger" : "success"} />
       </div>
       <div className="panel result-panel">
-        <div className="section-heading"><div><h3>Liability and ITC comparison</h3><p>GSTR-1/GSTR-2B source values compared with values reported in GSTR-3B.</p></div></div>
+        <div className="section-heading"><div><h3>Books, liability and ITC comparison</h3><p>Sales-register values flow through GSTR-1 to GSTR-3B; optional GSTR-2B values add ITC checks.</p></div></div>
         <div className="table-scroll result-table-scroll">
           <table>
-            <thead><tr><th>Table</th><th>Check</th><th>Measure</th><th className="number-cell">Source return</th><th className="number-cell">GSTR-3B</th><th className="number-cell">Difference</th><th>Status</th><th>Suggested review</th></tr></thead>
+            <thead><tr><th>Table</th><th>Check</th><th>Measure</th><th className="number-cell">Source</th><th className="number-cell">Compared with</th><th className="number-cell">Difference</th><th>Status</th><th>Suggested review</th></tr></thead>
             <tbody>{result.comparisons.map((item) => (
               <tr key={item.id} className={item.status === "mismatch" ? "mismatch-row" : ""}>
-                <td><span className="section-code">{item.table}</span></td><td>{item.label}</td><td>{item.measureLabel}</td><td className="number-cell">{money(item.sourceValue)}</td><td className="number-cell">{money(item.filedValue)}</td><td className={`number-cell difference-${item.difference > 0 ? "positive" : item.difference < 0 ? "negative" : "zero"}`}>{item.difference > 0 ? <ArrowUpRight size={14} /> : item.difference < 0 ? <ArrowDownRight size={14} /> : null}{money(item.difference)}</td>
+                <td><span className="section-code">{item.table}</span></td><td>{item.label}</td><td>{item.measureLabel}</td><td className="number-cell comparison-value"><small>{item.sourceLabel || "Source"}</small>{money(item.sourceValue)}</td><td className="number-cell comparison-value"><small>{item.filedLabel || "GSTR-3B"}</small>{money(item.filedValue)}</td><td className={`number-cell difference-${item.difference > 0 ? "positive" : item.difference < 0 ? "negative" : "zero"}`}>{item.difference > 0 ? <ArrowUpRight size={14} /> : item.difference < 0 ? <ArrowDownRight size={14} /> : null}{money(item.difference)}</td>
                 <td><span className={`status-pill status-${item.status === "matched" ? "success" : "warning"}`}>{item.status === "matched" ? <CheckCircle2 size={13} /> : <AlertOctagon size={13} />}{item.status === "matched" ? "Matched" : item.risk === "high" ? "High priority" : "Review"}</span></td>
                 <td className="suggestion-cell">{item.suggestion}</td>
               </tr>

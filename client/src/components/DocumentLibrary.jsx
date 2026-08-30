@@ -7,7 +7,7 @@ export default function DocumentLibrary({ documents, selectedIds, onToggle, onMa
   return (
     <section className="panel document-panel" id="documents" aria-labelledby="documents-heading">
       <div className="section-heading">
-        <div><p className="eyebrow">Step 2</p><h2 id="documents-heading">Select files to reconcile</h2><p>Choose the exact return files for this review. At least one GSTR-1 and one GSTR-3B are required.</p></div>
+        <div><p className="eyebrow">Step 2</p><h2 id="documents-heading">Select files to reconcile</h2><p>At least one GSTR-1 and one GSTR-3B are required. Add a sales register for books-to-return checks.</p></div>
         <span className="count-badge">{selectedIds.length} selected</span>
       </div>
       {!documents.length ? (

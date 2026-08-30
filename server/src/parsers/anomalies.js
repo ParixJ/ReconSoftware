@@ -14,7 +14,8 @@ export function auditNormalized(normalized) {
   } else if (!new RegExp(`^${GSTIN_PATTERN.source.replace(/^\\b|\\b$/g, "")}$`, "i").test(normalized.gstin)) {
     anomalies.push(anomaly("INVALID_CLIENT_GSTIN", "error", `Client GSTIN ${normalized.gstin} is not in the expected 15-character format.`, "Verify the source or correct the GSTIN in Modify mapping."));
   }
-  if (!normalized.returnPeriod) {
+  const hasBooksPeriods = normalized.documentType === "salesRegister" && Object.keys(normalized.periods || {}).length > 0;
+  if (!normalized.returnPeriod && !hasBooksPeriods) {
     anomalies.push(anomaly("MISSING_RETURN_PERIOD", "error", "Return period was not found in the document.", "Open Modify mapping and enter the period as MMYYYY."));
   }
   if (!normalized.rows.length) {
@@ -26,7 +27,7 @@ export function auditNormalized(normalized) {
     if (row.counterpartyGstin && !GSTIN_PATTERN.test(String(row.counterpartyGstin).toUpperCase())) {
       anomalies.push(anomaly("INVALID_COUNTERPARTY_GSTIN", "error", `Row ${index + 1} has an invalid counterparty GSTIN.`, "Verify the supplier/recipient GSTIN in the source.", index));
     }
-    if (row.invoiceNumber) {
+    if (row.invoiceNumber && normalized.documentType !== "salesRegister") {
       const key = `${row.counterpartyGstin || ""}|${String(row.invoiceNumber).toUpperCase()}`;
       if (invoiceKeys.has(key)) {
         anomalies.push(anomaly("DUPLICATE_INVOICE", "warning", `Invoice ${row.invoiceNumber} appears more than once for the same counterparty.`, "Review amendments and duplicate uploads before relying on totals.", index));

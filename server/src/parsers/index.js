@@ -6,6 +6,9 @@ import { AppError } from "../errors.js";
 import { detectFileType } from "./detectFileType.js";
 import { detectDocumentType, firstGstin, normalizePeriod } from "./utils.js";
 import { genericNormalize, normalizeJson } from "./normalizers.js";
+import { parseGstr1Text } from "./gstr1.js";
+import { parseGstr3bText } from "./gstr3b.js";
+import { parseSalesRegisterMatrix } from "./salesRegister.js";
 
 async function parseJson(filePath, filename) {
   let payload;
@@ -25,6 +28,8 @@ async function parseWorkbook(filePath, filename) {
     throw new AppError(400, "INVALID_WORKBOOK", `${filename} could not be read as an XLSX workbook.`);
   }
   if (!matrix.length) return genericNormalize([], filename, { anomalies: [{ code: "EMPTY_WORKBOOK", severity: "warning", message: "The workbook has no populated rows.", suggestion: "Upload a populated GST return export." }] });
+  const salesRegister = parseSalesRegisterMatrix(matrix, filename, { strict: false });
+  if (salesRegister) return salesRegister;
   const headers = matrix[0].map((value, index) => String(value ?? "").trim() || `Column ${index + 1}`);
   const rows = matrix.slice(1).filter((cells) => cells.some((value) => value !== null && value !== "")).map((cells) =>
     Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""])),
@@ -51,11 +56,14 @@ async function parsePdf(filePath, filename) {
     throw new AppError(400, "INVALID_PDF", `${filename} could not be parsed as a PDF document.`);
   }
   const text = extracted.text || "";
+  const documentType = detectDocumentType({ filename, text });
+  if (documentType === "gstr1") return parseGstr1Text(text, filename);
+  if (documentType === "gstr3b") return parseGstr3bText(text, filename);
   const lineRows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => ({ extractedText: line }));
   const periodMatch = text.match(/(?:return\s*period|tax\s*period)\s*[:\-]?\s*((?:0[1-9]|1[0-2])\d{4})/i);
   return genericNormalize(lineRows, filename, {
     text,
-    documentType: detectDocumentType({ filename, text }),
+    documentType,
     gstin: firstGstin(text),
     returnPeriod: normalizePeriod(periodMatch?.[1]),
     anomalies: text.trim() ? [{

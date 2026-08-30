@@ -20,7 +20,7 @@ export default function UploadPanel({ onUpload, uploading, progress }) {
       >
         <input ref={inputRef} className="visually-hidden" type="file" multiple accept=".pdf,.xlsx,.csv,.json,application/pdf,application/json" onChange={(event) => { choose(event.target.files); event.target.value = ""; }} />
         <span className="upload-icon"><UploadCloud size={24} /></span>
-        <div><strong>{uploading ? `Uploading and extracting… ${progress}%` : "Drop GST returns here"}</strong><p>File format and return type are detected automatically</p></div>
+        <div><strong>{uploading ? `Uploading and extracting… ${progress}%` : "Drop GST returns or sales registers here"}</strong><p>File format and document type are detected automatically</p></div>
         <button className="button button-secondary" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>{uploading ? "Processing" : "Browse files"}</button>
       </div>
       {uploading ? <div className="progress-track" aria-label={`Upload ${progress}% complete`}><span style={{ width: `${progress}%` }} /></div> : null}

@@ -27,6 +27,17 @@ const FIELD_SYNONYMS = {
   cess: ["csamt", "cess", "cess amount"],
 };
 
+const GENERATED_ANOMALY_CODES = new Set([
+  "UNKNOWN_DOCUMENT_TYPE",
+  "MISSING_CLIENT_GSTIN",
+  "INVALID_CLIENT_GSTIN",
+  "MISSING_RETURN_PERIOD",
+  "NO_RECORDS",
+  "INVALID_COUNTERPARTY_GSTIN",
+  "DUPLICATE_INVOICE",
+  "INVOICE_TOTAL_INCONSISTENT",
+]);
+
 function unwrap(payload) {
   const first = Array.isArray(payload) ? payload[0] : payload;
   return first?.data || first || {};
@@ -235,6 +246,14 @@ export function applyFieldMapping(parsed, input) {
     gstin: cleanText(input.gstin || parsed.gstin).toUpperCase() || null,
     returnPeriod: normalizePeriod(input.returnPeriod || parsed.returnPeriod),
   };
+  if (parsed.builtInSchema) {
+    const anomalies = (parsed.anomalies || []).filter((item) => (
+      !GENERATED_ANOMALY_CODES.has(item.code)
+      && !(item.code === "BOOKS_GSTIN_NOT_FOUND" && metadata.gstin)
+    ));
+    const rows = parsed.rows.map((row) => ({ ...row, documentType: metadata.documentType, clientGstin: metadata.gstin }));
+    return finish({ ...parsed, ...metadata, rows, anomalies });
+  }
   if (!parsed.sourceRows?.length) {
     return finish({ ...parsed, ...metadata, anomalies: [] });
   }
