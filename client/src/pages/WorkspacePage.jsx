@@ -44,7 +44,12 @@ export default function WorkspacePage() {
     if (!requestedDetailId || details[requestedDetailId]) return;
     setDetailLoading(true);
     documentsApi.get(requestedDetailId)
-      .then(({ data }) => setDetails((current) => ({ ...current, [requestedDetailId]: data.document })))
+      .then(({ data }) => {
+        setDetails((current) => ({ ...current, [requestedDetailId]: data.document }));
+        setDocuments((current) => current.map((document) => document.id === requestedDetailId
+          ? { ...data.document, parsed: undefined }
+          : document));
+      })
       .catch((error) => setNotice({ tone: "danger", title: "Document could not load", message: errorMessage(error) }))
       .finally(() => setDetailLoading(false));
   }, [requestedDetailId, details]);

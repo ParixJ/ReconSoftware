@@ -52,15 +52,31 @@ test("parses collapsed GST portal cells instead of reporting a zero GSTR-1 taxab
     7 - Taxable supplies (Net of debit and credit notes) to unregistered persons (other than the supplies covered in Table 5) - B2CS (Others)
     Total0Net Value0.000.000.000.000.00
     8 - Nil rated, exempted and non GST outward supplies
+    Total3,000.00
+    - Nil1,000.00
+    - Exempted500.00
+    - Non-GST1,500.00
+    9B - Credit/Debit Notes (Registered) – CDNR
+    Total - Net off debit/credit notes (Debit notes - Credit notes)1Note-20,900.000.00-1,881.00-1,881.000.00
+    9B - Credit/Debit Notes (Unregistered) – CDNUR
+    Total - Net off debit/credit notes (Debit notes - Credit notes)0Note0.000.000.00
+    10 - Amendment to taxable outward supplies made to unregistered person
   `, "gstr1-dec-2022.pdf");
 
   assert.equal(parsed.returnPeriod, "122022");
   assert.equal(parsed.rows.find((row) => row.section === "4A")?.taxableValue, 6802167);
   assert.ok(parsed.rows.some((row) => row.section === "6B"));
+  assert.equal(parsed.rows.find((row) => row.section === "8-NIL")?.taxableValue, 1000);
+  assert.equal(parsed.rows.find((row) => row.section === "8-EXEMPT")?.taxableValue, 500);
+  assert.equal(parsed.rows.find((row) => row.section === "8-NONGST")?.taxableValue, 1500);
   assert.deepEqual(
     [parsed.summary.taxableOutward.taxableValue, parsed.summary.taxableOutward.igst, parsed.summary.taxableOutward.cgst, parsed.summary.taxableOutward.sgst],
-    [6802167, 176222, 81946, 81946],
+    [6781267, 176222, 80065, 80065],
   );
+  assert.equal(parsed.summary.taxableOutwardBase.taxableValue, 6802167);
+  assert.equal(parsed.summary.taxableOutwardAdjustments.taxableValue, -20900);
+  assert.equal(parsed.summary.nilExempt.taxableValue, 1500);
+  assert.equal(parsed.summary.nonGst.taxableValue, 1500);
 });
 
 test("recognizes the GST portal 5A label when B2C-large is the only taxable section", () => {

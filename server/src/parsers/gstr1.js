@@ -7,6 +7,15 @@ import {
   scannedPdfAnomaly,
 } from "./pdfParserUtils.js";
 
+export const GSTR1_PARSER_VERSION = 2;
+
+const SECTION_ORDER = new Map([
+  ["4A", 10], ["4B", 20], ["5", 30], ["6A", 40], ["6B", 50], ["6C", 60], ["7", 70],
+  ["8-NIL", 80], ["8-EXEMPT", 81], ["8-NONGST", 82],
+  ["9A-B2B", 90], ["9A-B2B-RCM", 91], ["9A-B2CL", 92],
+  ["9B-CDNR", 100], ["9B-CDNUR", 101], ["10", 110],
+]);
+
 const DEFINITIONS = [
   {
     section: "4A",
@@ -95,7 +104,7 @@ function portalSummaryRows(text) {
       description,
       values,
       indexes,
-      extra: reverseCharge ? { reverseCharge } : {},
+      extra: { liabilityComponent: category === "taxableOutward" ? "base" : undefined, ...(reverseCharge ? { reverseCharge } : {}) },
     }));
   }
 
@@ -115,7 +124,7 @@ function portalSummaryRows(text) {
       description,
       values,
       indexes,
-      extra: reverseCharge ? { reverseCharge } : {},
+      extra: { liabilityComponent: "adjustment", ...(reverseCharge ? { reverseCharge } : {}) },
     }));
   }
 
@@ -125,9 +134,35 @@ function portalSummaryRows(text) {
   ];
   for (const [section, description, start, end] of noteGroups) {
     const values = amountsAfter(text, start, end, 500);
-    if (values?.length >= 5) rows.push(moneyRow({ section, category: "taxableOutward", documentType: "gstr1", description, values }));
+    if (values?.length >= 5) rows.push(moneyRow({
+      section,
+      category: "taxableOutward",
+      documentType: "gstr1",
+      description,
+      values,
+      extra: { liabilityComponent: "adjustment" },
+    }));
   }
   return rows;
+}
+
+function table8Rows(text) {
+  const definitions = [
+    ["8-NIL", "nilExempt", "Nil-rated outward supplies", /8\s*-\s*Nil\s+rated,?\s*exempted\s+and\s+non\s*GST\s+outward\s+supplies[\s\S]{0,300}?-\s*Nil/i, /-\s*Exempted/i],
+    ["8-EXEMPT", "nilExempt", "Exempt outward supplies", /8\s*-\s*Nil\s+rated,?\s*exempted\s+and\s+non\s*GST\s+outward\s+supplies[\s\S]{0,400}?-\s*Exempted/i, /-\s*Non\s*-?\s*GST/i],
+    ["8-NONGST", "nonGst", "Non-GST outward supplies", /8\s*-\s*Nil\s+rated,?\s*exempted\s+and\s+non\s*GST\s+outward\s+supplies[\s\S]{0,500}?-\s*Non\s*-?\s*GST/i, /\b9A\s*-/i],
+  ];
+  return definitions.flatMap(([section, category, description, start, end]) => {
+    const values = amountsAfter(text, start, end, 100);
+    return values?.length ? [moneyRow({
+      section,
+      category,
+      documentType: "gstr1",
+      description,
+      values,
+      indexes: [0, undefined, undefined, undefined, undefined],
+    })] : [];
+  });
 }
 
 function liabilityFallback(text) {
@@ -162,16 +197,23 @@ export function parseGstr1Text(rawText, filename = "") {
         description: definition.description,
         values,
         indexes: definition.indexes,
-        extra: definition.reverseCharge ? { reverseCharge: definition.reverseCharge } : {},
+        extra: {
+          liabilityComponent: definition.category === "taxableOutward"
+            ? definition.section === "9" ? "adjustment" : "base"
+            : undefined,
+          ...(definition.reverseCharge ? { reverseCharge: definition.reverseCharge } : {}),
+        },
       }));
     }
   }
 
   if (!syntheticSummaryLayout) rows.push(...portalSummaryRows(text));
+  if (!rows.some((row) => String(row.section).startsWith("8-"))) rows.push(...table8Rows(text));
   if (!rows.length) {
     const fallback = liabilityFallback(text);
     if (fallback) rows.push(fallback);
   }
+  rows.sort((left, right) => (SECTION_ORDER.get(left.section) ?? 1000) - (SECTION_ORDER.get(right.section) ?? 1000));
 
   const anomalies = scannedPdfAnomaly(text, "gstr1");
   if (!rows.length && !anomalies.some((item) => item.code === "SCANNED_PDF")) {
@@ -193,5 +235,6 @@ export function parseGstr1Text(rawText, filename = "") {
       legalName: namedValue(text, /(?:2\(a\)\.\s*)?Legal\s+name(?:\s+of\s+the\s+registered\s+person)?/i, /Trade\s+name|Financial\s+year|\b2\(b\)/i),
       tradeName: namedValue(text, /(?:2\(b\)\.\s*)?Trade\s+name(?:,\s*if\s+any)?/i, /Financial\s+year|Fixture\s+status|\b2\(c\)/i),
     },
+    extra: { parserVersion: GSTR1_PARSER_VERSION },
   });
 }

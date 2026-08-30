@@ -7,6 +7,7 @@ import { AppError } from "../errors.js";
 import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../api/contracts.js";
 import { applyFieldMapping } from "../parsers/normalizers.js";
 import { parseUploadedFile } from "../parsers/index.js";
+import { GSTR1_PARSER_VERSION } from "../parsers/gstr1.js";
 import { jsonSafeParse } from "../parsers/utils.js";
 
 const FIELD_LABELS = Object.freeze({
@@ -113,6 +114,52 @@ function insertDocument(userId, file, parsed) {
   return deserialize(row, true);
 }
 
+function storedFilePath(row) {
+  const filePath = path.resolve(config.uploadDir, row.stored_name);
+  const relativePath = path.relative(config.uploadDir, filePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new AppError(500, "INVALID_STORED_FILE_PATH", "The stored document path is invalid.");
+  }
+  return filePath;
+}
+
+function gstr1PdfNeedsRefresh(row, parsed) {
+  return row.document_type === "gstr1"
+    && row.file_type === "pdf"
+    && Number(parsed?.parserVersion || 0) < GSTR1_PARSER_VERSION;
+}
+
+async function refreshParsedDocument(row) {
+  const current = jsonSafeParse(row.parsed_data, null);
+  if (!gstr1PdfNeedsRefresh(row, current)) return row;
+
+  const reparsed = await parseUploadedFile(storedFilePath(row), row.original_name, row.mime_type);
+  const mapping = jsonSafeParse(row.mapping, {
+    documentType: row.document_type,
+    gstin: row.gstin,
+    returnPeriod: row.return_period,
+    fieldMap: {},
+  });
+  const updated = applyFieldMapping(reparsed, mapping);
+  const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
+  const status = updated.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready";
+  getDb().prepare(`
+    UPDATE documents SET document_type = ?, gstin = ?, return_period = ?, status = ?, record_count = ?,
+      parsed_data = ?, anomalies = ? WHERE id = ? AND user_id = ?
+  `).run(
+    updated.documentType,
+    updated.gstin,
+    updated.returnPeriod,
+    status,
+    updated.rows.length,
+    JSON.stringify(updated),
+    JSON.stringify(updated.anomalies),
+    row.id,
+    row.user_id,
+  );
+  return getDocumentRow(row.user_id, row.id);
+}
+
 export async function createDocuments(userId, files) {
   const outcomes = await Promise.all(files.map(async (file) => {
     try {
@@ -143,13 +190,13 @@ export function getDocument(userId, id) {
   return deserialize(getDocumentRow(userId, id), true);
 }
 
+export async function getCurrentDocument(userId, id) {
+  return deserialize(await refreshParsedDocument(getDocumentRow(userId, id)), true);
+}
+
 export async function deleteDocument(userId, id) {
   const row = getDocumentRow(userId, id);
-  const filePath = path.resolve(config.uploadDir, row.stored_name);
-  const relativePath = path.relative(config.uploadDir, filePath);
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new AppError(500, "INVALID_STORED_FILE_PATH", "The stored document path is invalid.");
-  }
+  const filePath = storedFilePath(row);
 
   try {
     await fs.unlink(filePath);
@@ -204,9 +251,9 @@ export function updateViewPreference(userId, id, input) {
   return getDocument(userId, id);
 }
 
-export function rowsForReconciliation(userId, ids) {
-  return ids.map((id) => {
-    const row = getDocumentRow(userId, id);
+export async function rowsForReconciliation(userId, ids) {
+  return Promise.all(ids.map(async (id) => {
+    const row = await refreshParsedDocument(getDocumentRow(userId, id));
     return { ...deserialize(row), parsed: jsonSafeParse(row.parsed_data, { rows: [], summary: {} }) };
-  });
+  }));
 }

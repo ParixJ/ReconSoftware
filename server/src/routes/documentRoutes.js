@@ -5,7 +5,7 @@ import { Router } from "express";
 import multer from "multer";
 import { config } from "../config.js";
 import { AppError } from "../errors.js";
-import { createDocuments, deleteDocument, getDocument, listDocuments, updateMapping, updateViewPreference } from "../services/documentService.js";
+import { createDocuments, deleteDocument, getCurrentDocument, listDocuments, updateMapping, updateViewPreference } from "../services/documentService.js";
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
 const upload = multer({
@@ -28,8 +28,8 @@ router.post("/upload", upload.array("files", 10), async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.get("/:id", (req, res, next) => {
-  try { res.json({ document: getDocument(req.user.id, req.params.id) }); }
+router.get("/:id", async (req, res, next) => {
+  try { res.json({ document: await getCurrentDocument(req.user.id, req.params.id) }); }
   catch (error) { next(error); }
 });
 

@@ -60,6 +60,8 @@ export function addMoney(target, source) {
 export function summarizeRows(rows) {
   const summary = {
     taxableOutward: emptyMoney(),
+    taxableOutwardBase: emptyMoney(),
+    taxableOutwardAdjustments: emptyMoney(),
     zeroRated: emptyMoney(),
     nilExempt: emptyMoney(),
     nonGst: emptyMoney(),
@@ -70,6 +72,11 @@ export function summarizeRows(rows) {
   };
   for (const row of rows) {
     if (summary[row.category]) addMoney(summary[row.category], row);
+    if (row.category === "taxableOutward" && row.liabilityComponent === "base") {
+      addMoney(summary.taxableOutwardBase, row);
+    } else if (row.category === "taxableOutward" && row.liabilityComponent === "adjustment") {
+      addMoney(summary.taxableOutwardAdjustments, row);
+    }
   }
   return summary;
 }

@@ -76,7 +76,10 @@ function invoiceGroups(root, key, category, childKey = "inv") {
   const rows = [];
   for (const party of root[key] || []) {
     for (const document of party[childKey] || []) {
-      rows.push(baseRow(key, category, root, party, document, sumItems(document), { documentType: "gstr1" }));
+      rows.push(baseRow(key, category, root, party, document, sumItems(document), {
+        documentType: "gstr1",
+        liabilityComponent: category === "taxableOutward" ? "base" : undefined,
+      }));
     }
   }
   return rows;
@@ -89,13 +92,19 @@ function normalizeGstr1(root) {
     ...invoiceGroups(root, "exp", "zeroRated"),
   ];
   for (const record of root.b2cs || []) {
-    rows.push(baseRow("b2cs", "taxableOutward", root, record, record, moneyFrom(record), { documentType: "gstr1" }));
+    rows.push(baseRow("b2cs", "taxableOutward", root, record, record, moneyFrom(record), {
+      documentType: "gstr1",
+      liabilityComponent: "base",
+    }));
   }
   for (const groupName of ["cdnr", "cdnur"]) {
     for (const party of root[groupName] || []) {
       for (const note of party.nt || party.notes || []) {
         const sign = String(note.ntty || note.noteType || "C").toUpperCase().startsWith("C") ? -1 : 1;
-        rows.push(baseRow(groupName, "taxableOutward", root, party, note, sumItems(note, sign), { documentType: "gstr1" }));
+        rows.push(baseRow(groupName, "taxableOutward", root, party, note, sumItems(note, sign), {
+          documentType: "gstr1",
+          liabilityComponent: "adjustment",
+        }));
       }
     }
   }

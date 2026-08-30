@@ -164,7 +164,7 @@ function serialize(row) {
   };
 }
 
-export function runReconciliation(userId, input) {
+export async function runReconciliation(userId, input) {
   const documentIds = [...new Set(Array.isArray(input.documentIds) ? input.documentIds.map(String) : [])];
   if (documentIds.length < 2 || documentIds.length > 10) throw new AppError(400, "INVALID_SELECTION", "Select between 2 and 10 documents to reconcile.");
   const amountTolerance = Number(input.amountTolerance ?? 1);
@@ -172,7 +172,7 @@ export function runReconciliation(userId, input) {
   if (!Number.isFinite(amountTolerance) || amountTolerance < 0 || amountTolerance > 1000000) throw new AppError(400, "INVALID_AMOUNT_TOLERANCE", "Amount tolerance must be between ₹0 and ₹10,00,000.");
   if (!Number.isInteger(dateToleranceDays) || dateToleranceDays < 0 || dateToleranceDays > 90) throw new AppError(400, "INVALID_DATE_TOLERANCE", "Date tolerance must be a whole number from 0 to 90 days.");
 
-  const documents = rowsForReconciliation(userId, documentIds);
+  const documents = await rowsForReconciliation(userId, documentIds);
   const gstr1 = documents.filter((item) => item.documentType === "gstr1");
   const gstr3b = documents.filter((item) => item.documentType === "gstr3b");
   const gstr2b = documents.filter((item) => item.documentType === "gstr2b" || item.documentType === "gstr2");

@@ -33,7 +33,7 @@ function insertDocument(userId, originalName, fileType, parsed) {
   return id;
 }
 
-test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", () => {
+test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", async () => {
   const userId = crypto.randomUUID();
   getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
     .run(userId, "books@example.test", "Books Auditor", "test-only", new Date().toISOString());
@@ -69,7 +69,7 @@ test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", ()
     insertDocument(userId, "gstr-1-apr-2025.pdf", "pdf", gstr1),
     insertDocument(userId, "gstr-3b-apr-2025.pdf", "pdf", gstr3b),
   ];
-  const reconciliation = runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
+  const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
 
   assert.equal(reconciliation.status, "matched");
   assert.equal(reconciliation.result.summary.totalChecks, 19);
