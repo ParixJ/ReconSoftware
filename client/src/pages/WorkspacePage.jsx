@@ -6,18 +6,16 @@ import DocumentTabs from "../components/DocumentTabs.jsx";
 import MappingPanel from "../components/MappingPanel.jsx";
 import Notice from "../components/Notice.jsx";
 import ReconciliationControls from "../components/ReconciliationControls.jsx";
-import ReconciliationResults from "../components/ReconciliationResults.jsx";
 import TopNav from "../components/TopNav.jsx";
 import UploadPanel from "../components/UploadPanel.jsx";
 
 export default function WorkspacePage() {
   const navigate = useNavigate();
-  const mappingMatch = useMatch("/workspace/mapping/:documentId");
+  const mappingMatch = useMatch("/home/mapping/:documentId");
   const [documents, setDocuments] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [details, setDetails] = useState({});
-  const [latest, setLatest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -31,12 +29,9 @@ export default function WorkspacePage() {
   const [tolerances, setTolerances] = useState({ amountTolerance: 1, dateToleranceDays: 0 });
 
   useEffect(() => {
-    Promise.all([documentsApi.list(), reconciliationApi.list()])
-      .then(([documentResponse, reconciliationResponse]) => {
-        setDocuments(documentResponse.data.documents);
-        setLatest(reconciliationResponse.data.reconciliations[0] || null);
-      })
-      .catch((error) => setNotice({ tone: "danger", title: "Workspace could not load", message: errorMessage(error) }))
+    documentsApi.list()
+      .then((response) => setDocuments(response.data.documents))
+      .catch((error) => setNotice({ tone: "danger", title: "Home could not load", message: errorMessage(error) }))
       .finally(() => setLoading(false));
   }, []);
 
@@ -109,9 +104,16 @@ export default function WorkspacePage() {
     setRunning(true); setNotice(null);
     try {
       const { data } = await reconciliationApi.run({ documentIds: selectedIds, amountTolerance: Number(tolerances.amountTolerance), dateToleranceDays: Number(tolerances.dateToleranceDays) });
-      setLatest(data.reconciliation);
-      setNotice({ tone: data.reconciliation.status === "matched" ? "success" : "warning", title: data.reconciliation.status === "matched" ? "Reconciliation matched" : "Reconciliation needs review", message: data.reconciliation.status === "matched" ? "All comparison values are within tolerance." : "Review the highlighted differences and suggested mapping changes below." });
-      requestAnimationFrame(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      const params = new URLSearchParams();
+      const gstin = data.reconciliation.result?.clientGstin;
+      const years = (data.reconciliation.result?.periods || [])
+        .map((item) => item.returnPeriod?.slice(2))
+        .filter((year) => /^\d{4}$/.test(year || ""))
+        .sort((left, right) => right.localeCompare(left));
+      if (gstin) params.set("gstin", gstin);
+      if (years[0]) params.set("year", years[0]);
+      const query = params.toString();
+      navigate(`/reconciliations${query ? `?${query}` : ""}`);
     } catch (error) {
       setNotice({ tone: "danger", title: "Reconciliation could not run", message: errorMessage(error) });
     } finally { setRunning(false); }
@@ -124,9 +126,7 @@ export default function WorkspacePage() {
       const { data } = await documentsApi.updateMapping(id, mapping);
       setDetails((current) => ({ ...current, [id]: data.document }));
       setDocuments((current) => current.map((document) => document.id === id ? { ...data.document, parsed: undefined } : document));
-      const reconciliationResponse = await reconciliationApi.list();
-      setLatest(reconciliationResponse.data.reconciliations[0] || null);
-      navigate("/workspace");
+      navigate("/home");
       setNotice({ tone: "success", title: "Mapping saved", message: "Normalized rows and active reconciliation exceptions were recalculated." });
     } finally { setSavingMapping(false); }
   };
@@ -178,21 +178,20 @@ export default function WorkspacePage() {
     }
   };
 
-  if (mappingMatch) return <MappingPanel document={details[mappingMatch.params.documentId]} onClose={() => navigate("/workspace")} onSave={saveMapping} saving={savingMapping} />;
+  if (mappingMatch) return <MappingPanel document={details[mappingMatch.params.documentId]} onClose={() => navigate("/home")} onSave={saveMapping} saving={savingMapping} />;
 
   return (
     <div className="workspace-shell">
       <TopNav />
       <main className="workspace" id="workspace">
-        <header className="page-header"><div><p className="eyebrow">Auditor workspace</p><h1>GST return reconciliation</h1><p>Upload books and returns, verify extracted fields, then compare outward liability and input tax credit.</p></div><div className="page-context"><small>Review mode</small><strong>GSTR-1 ↔ GSTR-3B</strong><span>Optional sales-register and GSTR-2B checks</span></div></header>
+        <header className="page-header"><div><p className="eyebrow">Auditor home</p><h1>GST return reconciliation</h1><p>Upload books and returns, verify extracted fields, then compare outward liability and input tax credit.</p></div><div className="page-context"><small>Review mode</small><strong>GSTR-1 ↔ GSTR-3B</strong><span>Optional sales-register and GSTR-2B checks</span></div></header>
         {notice ? <Notice tone={notice.tone} title={notice.title} onClose={() => setNotice(null)}>{notice.message}</Notice> : null}
         {loading ? <div className="panel loading-block"><span className="spinner" />Loading documents…</div> : (
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
-            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
+            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
             <ReconciliationControls selectedCount={selectedIds.length} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
-            <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
-            <ReconciliationResults reconciliation={latest} onModifyMapping={(id) => navigate(`/workspace/mapping/${id}`)} />
+            <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
           </>
         )}
       </main>

@@ -54,6 +54,9 @@ test("auditor can choose and persist dark mode from the authentication page", as
   await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
   await expect(rootElement).toHaveAttribute("data-theme", "dark");
   await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
+  await page.getByRole("link", { name: "Reconciliations" }).click();
+  await expect(page.getByRole("heading", { name: "Previous reconciliations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No reconciliations ran" })).toBeVisible();
 });
 
 test("auditor uploads three returns, reviews mapping, and reconciles", async ({ page }) => {
@@ -80,21 +83,29 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByRole("heading", { name: "Return identity" })).toBeVisible();
   await expect(page.getByText("Official GST schema recognized")).toBeVisible();
   await page.screenshot({ path: path.join(root, "test-results/gst-mapping-page.png"), fullPage: true });
-  await page.getByRole("button", { name: "Back to reconciliation" }).click();
+  await page.getByRole("button", { name: "Back to Home" }).click();
 
   await page.getByRole("button", { name: "Run on 3 files" }).click();
-  await expect(page.getByText("Reconciliation needs review")).toBeVisible();
+  await expect(page).toHaveURL(/\/reconciliations\?gstin=24AEXPS3034H1Z6&year=2026/);
+  await expect(page.getByLabel("Client GSTIN")).toHaveValue("24AEXPS3034H1Z6");
+  await expect(page.getByLabel("Return year")).toHaveValue("2026");
+  await expect(page.getByText("Review required").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: /Mar 2026/ })).toBeVisible();
   await expect(page.getByText("20 / 23")).toBeVisible();
   await expect(page.getByText("Suggested review sequence")).toBeVisible();
   await page.screenshot({ path: path.join(root, "test-results/gst-reconciliation-flow.png"), fullPage: true });
 
+  await page.getByRole("link", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
   const gstr1Row = page.getByRole("row").filter({ hasText: "gstr1-march-2026.json" });
   page.once("dialog", (dialog) => dialog.accept());
   await gstr1Row.getByRole("button", { name: "Delete gstr1-march-2026.json" }).click();
   await expect(page.getByText("Document deleted")).toBeVisible();
   await expect(gstr1Row).toHaveCount(0);
 
+  await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Select all documents" }).click();
+  await expect(page.getByText("2 selected", { exact: true })).toBeVisible();
   await page.getByRole("checkbox", { name: "Clear document selection" }).click();
   await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
   await page.getByRole("checkbox", { name: "Select all documents" }).click();
@@ -155,6 +166,28 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await expect(mayTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Files used for May 2025:")).toBeVisible();
   await expect(page.getByRole("tablist", { name: "Reconciliation periods" }).getByRole("tab")).toHaveCount(2);
+
+  await page.getByRole("link", { name: "Home" }).click();
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: "gstr1-april-2026.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr1("042026", "15-04-2026", 3000, 270))) },
+    { name: "gstr3b-april-2026.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b("042026", 3000, 270))) },
+  ]);
+  await expect(page.getByText("2 documents ready")).toBeVisible();
+  await page.getByRole("button", { name: "Run on 2 files" }).click();
+
+  const gstinSearch = page.getByLabel("Search GSTIN");
+  const gstinSelect = page.getByLabel("Client GSTIN");
+  const yearSelect = page.getByLabel("Return year");
+  await expect(gstinSelect).toHaveValue(gstin);
+  await expect(yearSelect).toHaveValue("2026");
+  await expect(yearSelect.locator("option")).toHaveText(["Select year", "2026", "2025"]);
+  await yearSelect.selectOption("2025");
+  await expect(page.getByRole("tablist", { name: "Reconciliation periods" }).getByRole("tab")).toHaveCount(2);
+  await gstinSelect.selectOption("");
+  await gstinSearch.fill("AEXPS3034");
+  await expect(gstinSelect.locator("option")).toHaveText(["Select client GSTIN", gstin]);
+  await gstinSelect.selectOption(gstin);
+  await expect(yearSelect).toHaveValue("2026");
 });
 
 test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {

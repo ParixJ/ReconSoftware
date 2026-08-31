@@ -353,6 +353,15 @@ tbody tr:hover td { background: var(--surface-hover); }
 .results-empty { min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 16px; padding: 24px; color: var(--text-secondary); text-align: left; }
 .results-empty h2 { margin-bottom: 3px; color: var(--text); font-size: 17px; }
 .results-empty p { margin: 0; font-size: 12px; }
+.reconciliation-history-page { align-content: start; }
+.history-filter-panel { padding-bottom: 20px; }
+.history-filter-row { display: grid; grid-template-columns: 280px minmax(300px,1fr) 180px; align-items: end; gap: 16px; padding: 3px 20px 0; }
+.history-search-input { height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 11px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; }
+.history-search-input:focus-within { outline: 2px solid color-mix(in srgb, var(--focus) 32%, transparent); border-color: var(--focus); }
+.history-search-input input { min-width: 0; height: 38px; padding: 0; background: transparent; border: 0; outline: 0; }
+.history-search-input input:focus { outline: 0; }
+.history-year-field select:disabled { color: var(--text-disabled); background: var(--surface-subtle); }
+.history-empty, .history-prompt { min-height: 190px; }
 .results-section { display: grid; gap: 16px; padding-top: 8px; scroll-margin-top: 82px; }
 .reconciliation-period-tabs { display: flex; gap: 7px; overflow-x: auto; padding: 5px 0 1px; }
 .reconciliation-period-tab { min-width: 178px; display: flex; align-items: center; gap: 9px; padding: 10px 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 7px; text-align: left; }
@@ -428,6 +437,8 @@ tbody tr:hover td { background: var(--surface-hover); }
   .tolerance-controls { grid-row: 2; }
   .run-button { grid-column: 2; grid-row: 1 / span 2; }
   .metric-grid { grid-template-columns: repeat(2,1fr); }
+  .history-filter-row { grid-template-columns: minmax(230px,.55fr) minmax(280px,1fr); }
+  .history-year-field { width: 180px; grid-column: 1 / -1; }
 }
 
 @media (max-width: 760px) {
@@ -460,6 +471,8 @@ tbody tr:hover td { background: var(--surface-hover); }
   .original-view-banner { grid-template-columns: auto 1fr; }
   .original-view-banner .button { grid-column: span 1; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
+  .history-filter-row { grid-template-columns: 1fr; padding-right: 14px; padding-left: 14px; }
+  .history-year-field { width: 100%; grid-column: auto; }
   .mapping-page { padding: 20px 14px 36px; }
   .mapping-header { grid-template-columns: 1fr; }
   .mapping-header .button { justify-self: start; }

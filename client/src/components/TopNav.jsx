@@ -1,18 +1,21 @@
 import { CircleUserRound, FileCheck2, LogOut, Scale } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/authStore.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 
 export default function TopNav() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const location = useLocation();
+  const onHome = location.pathname.startsWith("/home");
   return (
     <header className="topnav">
       <div className="topnav-inner">
-        <a className="brand brand-small" href="#workspace"><span className="brand-mark"><Scale size={18} /></span><span>Reconcile GST</span></a>
-        <nav aria-label="Workspace navigation">
-          <a href="#workspace" className="nav-active">Workspace</a>
-          <a href="#documents">Documents</a>
-          <a href="#results">Results</a>
+        <Link className="brand brand-small" to="/home"><span className="brand-mark"><Scale size={18} /></span><span>Reconcile GST</span></Link>
+        <nav aria-label="Primary navigation">
+          <Link to="/home" className={onHome && location.hash !== "#documents" ? "nav-active" : ""} aria-current={onHome && location.hash !== "#documents" ? "page" : undefined}>Home</Link>
+          <Link to="/home#documents" className={onHome && location.hash === "#documents" ? "nav-active" : ""} aria-current={onHome && location.hash === "#documents" ? "page" : undefined}>Documents</Link>
+          <Link to="/reconciliations" className={location.pathname === "/reconciliations" ? "nav-active" : ""} aria-current={location.pathname === "/reconciliations" ? "page" : undefined}>Reconciliations</Link>
         </nav>
         <div className="topnav-actions">
           <span className="storage-label"><FileCheck2 size={16} />Local secure storage</span>

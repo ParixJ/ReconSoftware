@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AuthPage from "./pages/AuthPage.jsx";
+import ReconciliationsPage from "./pages/ReconciliationsPage.jsx";
 import WorkspacePage from "./pages/WorkspacePage.jsx";
 import { useAuthStore } from "./store/authStore.js";
 
@@ -10,6 +11,11 @@ function Protected({ children }) {
   return status === "authenticated" ? children : <Navigate to="/auth" replace />;
 }
 
+function LegacyWorkspaceRedirect() {
+  const location = useLocation();
+  return <Navigate to={{ pathname: location.pathname.replace(/^\/workspace/, "/home"), search: location.search, hash: location.hash }} replace />;
+}
+
 export default function App() {
   const initialize = useAuthStore((state) => state.initialize);
   const status = useAuthStore((state) => state.status);
@@ -17,9 +23,11 @@ export default function App() {
   
   return (
     <Routes>
-      <Route path="/auth" element={status === "authenticated" ? <Navigate to="/workspace" replace /> : <AuthPage />} />
-      <Route path="/workspace/*" element={<Protected><WorkspacePage /></Protected>} />
-      <Route path="*" element={<Navigate to={status === "authenticated" ? "/workspace" : "/auth"} replace />} />
+      <Route path="/auth" element={status === "authenticated" ? <Navigate to="/home" replace /> : <AuthPage />} />
+      <Route path="/home/*" element={<Protected><WorkspacePage /></Protected>} />
+      <Route path="/reconciliations" element={<Protected><ReconciliationsPage /></Protected>} />
+      <Route path="/workspace/*" element={<LegacyWorkspaceRedirect />} />
+      <Route path="*" element={<Navigate to={status === "authenticated" ? "/home" : "/auth"} replace />} />
     </Routes>
   );
 }

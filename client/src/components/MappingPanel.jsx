@@ -29,7 +29,7 @@ export default function MappingPanel({ document, onClose, onSave, saving }) {
   };
   return (
     <main className="mapping-page">
-      <div className="mapping-header"><button className="button button-quiet" onClick={onClose}><ArrowLeft size={17} />Back to reconciliation</button><div><p className="eyebrow">Modify mapping</p><h1>{document.originalName}</h1><p>Confirm return identity and map recognized source columns to fixed reconciliation fields.</p></div></div>
+      <div className="mapping-header"><button className="button button-quiet" onClick={onClose}><ArrowLeft size={17} />Back to Home</button><div><p className="eyebrow">Modify mapping</p><h1>{document.originalName}</h1><p>Confirm return identity and map recognized source columns to fixed reconciliation fields.</p></div></div>
       <form className="mapping-layout" onSubmit={submit}>
         <section className="panel mapping-section">
           <div className="section-heading"><div><h2>Return identity</h2><p>These values are used to group the client and filing period.</p></div><WandSparkles size={20} /></div>
