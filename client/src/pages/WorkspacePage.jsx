@@ -26,6 +26,7 @@ export default function WorkspacePage() {
   const [savingMapping, setSavingMapping] = useState(false);
   const [savingViewDecision, setSavingViewDecision] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [notice, setNotice] = useState(null);
   const [tolerances, setTolerances] = useState({ amountTolerance: 1, dateToleranceDays: 0 });
 
@@ -67,6 +68,25 @@ export default function WorkspacePage() {
     });
   };
 
+  const toggleAllDocuments = (shouldSelect) => {
+    const next = shouldSelect ? documents.map((document) => document.id) : [];
+    setSelectedIds(next);
+    setActiveId(next[0] || null);
+  };
+
+  const removeDocumentsFromWorkspace = (documentIds) => {
+    const removed = new Set(documentIds);
+    const remainingSelectedIds = selectedIds.filter((id) => !removed.has(id));
+    setDocuments((current) => current.filter((document) => !removed.has(document.id)));
+    setSelectedIds((current) => current.filter((id) => !removed.has(id)));
+    setActiveId((current) => removed.has(current) ? remainingSelectedIds[0] || null : current);
+    setDetails((current) => {
+      const next = { ...current };
+      for (const id of removed) delete next[id];
+      return next;
+    });
+  };
+
   const upload = async (files) => {
     setUploading(true); setUploadProgress(5); setNotice(null);
     try {
@@ -104,8 +124,10 @@ export default function WorkspacePage() {
       const { data } = await documentsApi.updateMapping(id, mapping);
       setDetails((current) => ({ ...current, [id]: data.document }));
       setDocuments((current) => current.map((document) => document.id === id ? { ...data.document, parsed: undefined } : document));
+      const reconciliationResponse = await reconciliationApi.list();
+      setLatest(reconciliationResponse.data.reconciliations[0] || null);
       navigate("/workspace");
-      setNotice({ tone: "success", title: "Mapping saved", message: "Normalized rows and anomaly checks were recalculated." });
+      setNotice({ tone: "success", title: "Mapping saved", message: "Normalized rows and active reconciliation exceptions were recalculated." });
     } finally { setSavingMapping(false); }
   };
 
@@ -125,20 +147,34 @@ export default function WorkspacePage() {
     setNotice(null);
     try {
       await documentsApi.remove(document.id);
-      const remainingSelectedIds = selectedIds.filter((id) => id !== document.id);
-      setDocuments((current) => current.filter((item) => item.id !== document.id));
-      setSelectedIds((current) => current.filter((id) => id !== document.id));
-      setActiveId((current) => current === document.id ? remainingSelectedIds[0] || null : current);
-      setDetails((current) => {
-        const next = { ...current };
-        delete next[document.id];
-        return next;
-      });
+      removeDocumentsFromWorkspace([document.id]);
       setNotice({ tone: "success", title: "Document deleted", message: `${document.originalName} was removed from the workspace and server storage.` });
     } catch (error) {
       setNotice({ tone: "danger", title: "Document could not be deleted", message: errorMessage(error) });
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const deleteSelectedDocuments = async () => {
+    const documentIds = [...selectedIds];
+    if (!documentIds.length) return;
+    const noun = documentIds.length === 1 ? "file" : "files";
+    if (!window.confirm(`Delete ${documentIds.length} selected ${noun}? This will permanently remove the uploaded ${noun}.`)) return;
+    setBulkDeleting(true);
+    setNotice(null);
+    try {
+      const { data } = await documentsApi.removeMany(documentIds);
+      removeDocumentsFromWorkspace(data.deletedIds);
+      if (data.errors.length) {
+        setNotice({ tone: "warning", title: `${data.deletedIds.length} deleted; ${data.errors.length} could not be deleted`, message: "Files that could not be removed remain selected so you can retry." });
+      } else {
+        setNotice({ tone: "success", title: `${data.deletedIds.length} ${data.deletedIds.length === 1 ? "document" : "documents"} deleted`, message: "The selected files were removed from the workspace and server storage." });
+      }
+    } catch (error) {
+      setNotice({ tone: "danger", title: "Selected documents could not be deleted", message: errorMessage(error) });
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -153,7 +189,7 @@ export default function WorkspacePage() {
         {loading ? <div className="panel loading-block"><span className="spinner" />Loading documents…</div> : (
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
-            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onDelete={deleteUploadedDocument} deletingId={deletingId} />
+            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
             <ReconciliationControls selectedCount={selectedIds.length} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
             <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/workspace/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
             <ReconciliationResults reconciliation={latest} onModifyMapping={(id) => navigate(`/workspace/mapping/${id}`)} />

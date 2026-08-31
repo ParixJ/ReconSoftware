@@ -123,6 +123,25 @@ function storedFilePath(row) {
   return filePath;
 }
 
+async function removeStoredDocumentFile(row) {
+  try {
+    await fs.unlink(storedFilePath(row));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+
+function bulkDocumentIds(input) {
+  if (!Array.isArray(input) || input.length < 1 || input.length > 100) {
+    throw new AppError(400, "INVALID_DOCUMENT_SELECTION", "Select between 1 and 100 documents to delete.");
+  }
+  const documentIds = [...new Set(input.map((id) => String(id || "").trim()))];
+  if (documentIds.some((id) => !id)) {
+    throw new AppError(400, "INVALID_DOCUMENT_SELECTION", "Every selected document must have a valid ID.");
+  }
+  return documentIds;
+}
+
 function gstr1PdfNeedsRefresh(row, parsed) {
   return row.document_type === "gstr1"
     && row.file_type === "pdf"
@@ -196,17 +215,48 @@ export async function getCurrentDocument(userId, id) {
 
 export async function deleteDocument(userId, id) {
   const row = getDocumentRow(userId, id);
-  const filePath = storedFilePath(row);
-
   try {
-    await fs.unlink(filePath);
+    await removeStoredDocumentFile(row);
   } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw new AppError(500, "DOCUMENT_FILE_DELETE_FAILED", "The uploaded file could not be removed from storage.");
-    }
+    throw new AppError(500, "DOCUMENT_FILE_DELETE_FAILED", "The uploaded file could not be removed from storage.");
   }
 
   getDb().prepare("DELETE FROM documents WHERE id = ? AND user_id = ?").run(id, userId);
+}
+
+export async function deleteDocuments(userId, inputIds) {
+  const documentIds = bulkDocumentIds(inputIds);
+  const placeholders = documentIds.map(() => "?").join(", ");
+  const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
+  if (rows.length !== documentIds.length) {
+    throw new AppError(404, "DOCUMENTS_NOT_FOUND", "One or more selected documents do not exist or are not available to your account.");
+  }
+
+  const outcomes = await Promise.all(rows.map(async (row) => {
+    try {
+      await removeStoredDocumentFile(row);
+      return { row };
+    } catch {
+      return {
+        error: {
+          id: row.id,
+          originalName: row.original_name,
+          code: "DOCUMENT_FILE_DELETE_FAILED",
+          message: "The uploaded file could not be removed from storage.",
+        },
+      };
+    }
+  }));
+  const deletedRows = outcomes.flatMap((outcome) => outcome.row ? [outcome.row] : []);
+  if (deletedRows.length) {
+    const deletedPlaceholders = deletedRows.map(() => "?").join(", ");
+    getDb().prepare(`DELETE FROM documents WHERE user_id = ? AND id IN (${deletedPlaceholders})`)
+      .run(userId, ...deletedRows.map((row) => row.id));
+  }
+  return {
+    deletedIds: deletedRows.map((row) => row.id),
+    errors: outcomes.flatMap((outcome) => outcome.error ? [outcome.error] : []),
+  };
 }
 
 export function updateMapping(userId, id, input) {

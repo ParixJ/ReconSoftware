@@ -27,4 +27,4 @@ Stores owner, safe storage name, detected file/document type, GSTIN, period, sta
 
 ## `reconciliations`
 
-Stores owner, selected document IDs, tolerances, status, immutable result JSON, and creation time. Historical results therefore remain reproducible even if a document mapping is later changed.
+Stores owner, selected document IDs, tolerances, status, the comparison-result snapshot, and creation time. Comparison values remain the recorded run snapshot. Reconciliation GET responses overlay integrity exceptions evaluated from current document mappings so resolved mapping defects are not presented as active exceptions.

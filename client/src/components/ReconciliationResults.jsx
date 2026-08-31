@@ -27,7 +27,7 @@ export default function ReconciliationResults({ reconciliation, onModifyMapping 
         <div className="section-heading"><div><h3>Books, liability and ITC comparison</h3><p>Sales-register values flow through GSTR-1 to GSTR-3B; optional GSTR-2B values add ITC checks.</p></div></div>
         <div className="table-scroll result-table-scroll">
           <table>
-            <thead><tr><th>Table</th><th>Check</th><th>Measure</th><th className="number-cell">Source</th><th className="number-cell">Compared with</th><th className="number-cell">Difference</th><th>Status</th><th>Suggested review</th></tr></thead>
+            <thead><tr><th>Table</th><th>Check</th><th>Field</th><th className="number-cell">Source</th><th className="number-cell">Compared with</th><th className="number-cell">Difference</th><th>Status</th><th>Suggested review</th></tr></thead>
             <tbody>{result.comparisons.map((item) => (
               <tr key={item.id} className={item.status === "mismatch" ? "mismatch-row" : ""}>
                 <td><span className="section-code">{item.table}</span></td><td>{item.label}</td><td>{item.measureLabel}</td><td className="number-cell comparison-value"><small>{item.sourceLabel || "Source"}</small>{money(item.sourceValue)}</td><td className="number-cell comparison-value"><small>{item.filedLabel || "GSTR-3B"}</small>{money(item.filedValue)}</td><td className={`number-cell difference-${item.difference > 0 ? "positive" : item.difference < 0 ? "negative" : "zero"}`}>{item.difference > 0 ? <ArrowUpRight size={14} /> : item.difference < 0 ? <ArrowDownRight size={14} /> : null}{money(item.difference)}</td>
@@ -41,8 +41,8 @@ export default function ReconciliationResults({ reconciliation, onModifyMapping 
       {result.exceptions.length ? (
         <div className="panel exception-panel">
           <div className="section-heading"><div><h3>Document exceptions</h3><p>Extraction and integrity checks that need auditor attention.</p></div><span className="count-badge">{result.exceptions.length}</span></div>
-          <div className="exception-list">{result.exceptions.map((item, index) => (
-            <article key={`${item.code}-${index}`} className={`exception-item exception-${item.severity}`}>
+          <div className="exception-list">{result.exceptions.map((item) => (
+            <article key={item.id} className={`exception-item exception-${item.severity}`} data-exception-id={item.id}>
               <AlertOctagon size={17} /><div><div className="exception-heading"><strong>{item.message}</strong><span>{item.code.replaceAll("_", " ")}</span></div>{item.documentName ? <small>{item.documentName}</small> : null}<p>{item.suggestion}</p></div>
               {item.documentId ? <button className="text-button" onClick={() => onModifyMapping(item.documentId)}>Modify mapping</button> : null}
             </article>

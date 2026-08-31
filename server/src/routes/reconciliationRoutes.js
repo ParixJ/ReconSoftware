@@ -3,13 +3,16 @@ import { getReconciliation, listReconciliations, runReconciliation } from "../se
 
 const router = Router();
 
-router.get("/", (req, res) => res.json({ reconciliations: listReconciliations(req.user.id) }));
+router.get("/", async (req, res, next) => {
+  try { res.json({ reconciliations: await listReconciliations(req.user.id) }); }
+  catch (error) { next(error); }
+});
 router.post("/", async (req, res, next) => {
   try { res.status(201).json({ reconciliation: await runReconciliation(req.user.id, req.body || {}) }); }
   catch (error) { next(error); }
 });
-router.get("/:id", (req, res, next) => {
-  try { res.json({ reconciliation: getReconciliation(req.user.id, req.params.id) }); }
+router.get("/:id", async (req, res, next) => {
+  try { res.json({ reconciliation: await getReconciliation(req.user.id, req.params.id) }); }
   catch (error) { next(error); }
 });
 

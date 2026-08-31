@@ -17,6 +17,7 @@ Authentication uses the `gst_session` HTTP-only cookie.
 | GET | `/api/documents` | Yes | → `{documents[]}` without parsed rows |
 | POST | `/api/documents/upload` | Yes | multipart `files` (1–10) → `{documents[], errors[]}` |
 | GET | `/api/documents/:id` | Yes | → `{document}` including normalized rows/source fields |
+| DELETE | `/api/documents` | Yes | `{documentIds:[1–100]}` → `{deletedIds[],errors[]}`; returns `207` when only part of the selection could be removed |
 | DELETE | `/api/documents/:id` | Yes | Removes the owned document metadata and uploaded file → `204` |
 | PUT | `/api/documents/:id/mapping` | Yes | `{documentType,gstin,returnPeriod,fieldMap}` → `{document}` |
 | PUT | `/api/documents/:id/view-preference` | Yes | `{mode:"original"|"hidden"}` → `{document}` |
@@ -27,3 +28,5 @@ Authentication uses the `gst_session` HTTP-only cookie.
 Supported `documentType` values are `gstr1`, `gstr2`, `gstr2b`, `gstr3b`, `salesRegister`, and `unknown`. `fieldMap` keys are restricted to the server's canonical columns.
 
 `POST /api/reconciliations` requires at least one GSTR-1 and one GSTR-3B. Selected `salesRegister` documents add books-to-GSTR-1 checks for the common return period; selected GSTR-2/GSTR-2B documents add ITC checks. Each comparison identifies its `sourceLabel` and `filedLabel` because the report can contain both books-to-GSTR-1 and return-to-GSTR-3B comparisons.
+
+Reconciliation exceptions include `{id,code,rootField,severity,message,suggestion,documentId?,rowIndex?}`. `GET /api/reconciliations` and `GET /api/reconciliations/:id` return active exceptions evaluated against the documents' current mappings; resolved exceptions are omitted.

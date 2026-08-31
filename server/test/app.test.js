@@ -113,6 +113,24 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.equal(deleteResponse.status, 204);
   assert.equal((await fetch(`${base}/documents/${unmappedId}`, { headers: { cookie } })).status, 404);
   assert.equal(fs.readdirSync(process.env.GST_UPLOAD_DIR).length, storedFilesBeforeDelete.length - 1);
+
+  const bulkIds = uploaded.documents.slice(0, 2).map((document) => document.id);
+  const otherBulkDelete = await fetch(`${base}/documents`, {
+    method: "DELETE", headers: { cookie: otherCookie, "content-type": "application/json" }, body: JSON.stringify({ documentIds: bulkIds }),
+  });
+  assert.equal(otherBulkDelete.status, 404);
+  assert.equal((await fetch(`${base}/documents`, { headers: { cookie } }).then((response) => response.json())).documents.length, 3);
+
+  const storedFilesBeforeBulkDelete = fs.readdirSync(process.env.GST_UPLOAD_DIR);
+  const bulkDeleteResponse = await fetch(`${base}/documents`, {
+    method: "DELETE", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ documentIds: bulkIds }),
+  });
+  assert.equal(bulkDeleteResponse.status, 200);
+  const bulkDelete = await bulkDeleteResponse.json();
+  assert.deepEqual(new Set(bulkDelete.deletedIds), new Set(bulkIds));
+  assert.deepEqual(bulkDelete.errors, []);
+  assert.equal((await fetch(`${base}/documents`, { headers: { cookie } }).then((response) => response.json())).documents.length, 1);
+  assert.equal(fs.readdirSync(process.env.GST_UPLOAD_DIR).length, storedFilesBeforeBulkDelete.length - 2);
 });
 
 test.after(() => {

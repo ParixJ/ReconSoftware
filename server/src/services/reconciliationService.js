@@ -3,6 +3,7 @@ import { getDb } from "../db/database.js";
 import { AppError } from "../errors.js";
 import { rowsForReconciliation } from "./documentService.js";
 import { addMoney, asNumber, emptyMoney, jsonSafeParse } from "../parsers/utils.js";
+import { rootFieldForAnomaly } from "../parsers/anomalies.js";
 
 const LIABILITY_DEFINITIONS = [
   { category: "taxableOutward", table: "3.1(a)", label: "Taxable outward supplies", measures: ["taxableValue", "igst", "cgst", "sgst", "cess"] },
@@ -19,6 +20,25 @@ const MEASURE_LABELS = {
   sgst: "SGST / UTGST",
   cess: "Cess",
 };
+
+function exceptionId(exception) {
+  const parts = [
+    exception.documentId || "selection",
+    exception.rootField || rootFieldForAnomaly(exception.code),
+    exception.code || "UNKNOWN_EXCEPTION",
+    Number.isInteger(exception.rowIndex) ? `row-${exception.rowIndex}` : "root",
+  ];
+  return `exception:${parts.map((part) => String(part).replace(/[^A-Za-z0-9_.-]+/g, "-")).join(":")}`;
+}
+
+function identifyExceptions(exceptions) {
+  const identified = exceptions.map((exception) => {
+    const rootField = exception.rootField || rootFieldForAnomaly(exception.code);
+    const item = { ...exception, rootField };
+    return { ...item, id: exceptionId(item) };
+  });
+  return [...new Map(identified.map((exception) => [exception.id, exception])).values()];
+}
 
 function aggregateSummary(documents, category) {
   const total = emptyMoney();
@@ -151,6 +171,31 @@ function dateExceptions(documents, toleranceDays) {
   return exceptions;
 }
 
+function activeExceptions(documents, dateToleranceDays) {
+  const gstr1 = documents.filter((item) => item.documentType === "gstr1");
+  const gstr3b = documents.filter((item) => item.documentType === "gstr3b");
+  const salesRegisters = documents.filter((item) => item.documentType === "salesRegister");
+  const filedPeriods = [...new Set([...gstr1, ...gstr3b].map((document) => document.returnPeriod).filter(Boolean))];
+  const comparisonPeriod = filedPeriods.length === 1 ? filedPeriods[0] : null;
+  const booksForPeriod = salesRegisterSummaryForPeriod(salesRegisters, comparisonPeriod);
+  return identifyExceptions([
+    ...identityExceptions(documents),
+    ...salesRegisterPeriodExceptions(salesRegisters, comparisonPeriod, booksForPeriod.includedDocumentIds),
+    ...dateExceptions(documents, dateToleranceDays),
+  ]);
+}
+
+function currentDocumentSummary(documents) {
+  return documents.map((item) => ({
+    id: item.id,
+    originalName: item.originalName,
+    documentType: item.documentType,
+    gstin: item.gstin,
+    returnPeriod: item.returnPeriod,
+    recordCount: item.recordCount,
+  }));
+}
+
 function serialize(row) {
   if (!row) return null;
   return {
@@ -162,6 +207,51 @@ function serialize(row) {
     result: jsonSafeParse(row.result_json, {}),
     createdAt: row.created_at,
   };
+}
+
+function withCurrentExceptions(reconciliation, documents) {
+  const result = reconciliation.result || {};
+  const comparisons = result.comparisons || [];
+  const exceptions = activeExceptions(documents, reconciliation.dateToleranceDays);
+  const mismatches = comparisons.filter((item) => item.status === "mismatch");
+  const highRisk = mismatches.filter((item) => item.risk === "high").length + exceptions.filter((item) => item.severity === "error").length;
+  return {
+    ...reconciliation,
+    status: mismatches.length || exceptions.length ? "needs_review" : "matched",
+    result: {
+      ...result,
+      clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
+      returnPeriod: documents.map((item) => item.returnPeriod).find(Boolean) || null,
+      documents: currentDocumentSummary(documents),
+      summary: {
+        ...(result.summary || {}),
+        exceptions: exceptions.length,
+        highRisk,
+      },
+      exceptions,
+      suggestions: [...new Set([
+        ...mismatches.map((item) => item.suggestion).filter(Boolean),
+        ...exceptions.map((item) => item.suggestion).filter(Boolean),
+      ])],
+    },
+  };
+}
+
+async function serializeWithCurrentExceptions(userId, row, documentsPromise) {
+  const reconciliation = serialize(row);
+  try {
+    const documents = await (documentsPromise || rowsForReconciliation(userId, reconciliation.documentIds));
+    return withCurrentExceptions(reconciliation, documents);
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    return {
+      ...reconciliation,
+      result: {
+        ...reconciliation.result,
+        exceptions: identifyExceptions(reconciliation.result?.exceptions || []),
+      },
+    };
+  }
 }
 
 export async function runReconciliation(userId, input) {
@@ -229,15 +319,18 @@ export async function runReconciliation(userId, input) {
     }));
   }
 
-  const booksExceptions = salesRegisterPeriodExceptions(salesRegisters, comparisonPeriod, booksForPeriod.includedDocumentIds);
-  const exceptions = [...identityExceptions(documents), ...booksExceptions, ...dateExceptions(documents, dateToleranceDays)];
+  const exceptions = identifyExceptions([
+    ...identityExceptions(documents),
+    ...salesRegisterPeriodExceptions(salesRegisters, comparisonPeriod, booksForPeriod.includedDocumentIds),
+    ...dateExceptions(documents, dateToleranceDays),
+  ]);
   const mismatches = comparisons.filter((item) => item.status === "mismatch");
   const highRisk = mismatches.filter((item) => item.risk === "high").length + exceptions.filter((item) => item.severity === "error").length;
   const suggestions = [...new Set([...mismatches.map((item) => item.suggestion), ...exceptions.map((item) => item.suggestion).filter(Boolean)])];
   const result = {
     clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
     returnPeriod: documents.map((item) => item.returnPeriod).find(Boolean) || null,
-    documents: documents.map((item) => ({ id: item.id, originalName: item.originalName, documentType: item.documentType, gstin: item.gstin, returnPeriod: item.returnPeriod, recordCount: item.recordCount })),
+    documents: currentDocumentSummary(documents),
     summary: {
       totalChecks: comparisons.length,
       matched: comparisons.length - mismatches.length,
@@ -264,12 +357,19 @@ export async function runReconciliation(userId, input) {
   return serialize(row);
 }
 
-export function listReconciliations(userId) {
-  return getDb().prepare("SELECT * FROM reconciliations WHERE user_id = ? ORDER BY created_at DESC").all(userId).map(serialize);
+export async function listReconciliations(userId) {
+  const rows = getDb().prepare("SELECT * FROM reconciliations WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+  const documentCache = new Map();
+  return Promise.all(rows.map((row) => {
+    const documentIds = jsonSafeParse(row.selected_document_ids, []);
+    const cacheKey = [...documentIds].sort().join(":");
+    if (!documentCache.has(cacheKey)) documentCache.set(cacheKey, rowsForReconciliation(userId, documentIds));
+    return serializeWithCurrentExceptions(userId, row, documentCache.get(cacheKey));
+  }));
 }
 
-export function getReconciliation(userId, id) {
+export async function getReconciliation(userId, id) {
   const row = getDb().prepare("SELECT * FROM reconciliations WHERE id = ? AND user_id = ?").get(id, userId);
   if (!row) throw new AppError(404, "RECONCILIATION_NOT_FOUND", "This reconciliation does not exist or is not available to your account.");
-  return serialize(row);
+  return serializeWithCurrentExceptions(userId, row);
 }

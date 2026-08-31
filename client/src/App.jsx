@@ -14,7 +14,7 @@ export default function App() {
   const initialize = useAuthStore((state) => state.initialize);
   const status = useAuthStore((state) => state.status);
   useEffect(() => { initialize(); }, [initialize]);
-
+  
   return (
     <Routes>
       <Route path="/auth" element={status === "authenticated" ? <Navigate to="/workspace" replace /> : <AuthPage />} />

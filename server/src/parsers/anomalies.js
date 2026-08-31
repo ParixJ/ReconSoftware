@@ -1,7 +1,36 @@
 import { GSTIN_PATTERN, asNumber } from "./utils.js";
 
+const ANOMALY_ROOT_FIELDS = Object.freeze({
+  UNKNOWN_DOCUMENT_TYPE: "documentType",
+  MISSING_CLIENT_GSTIN: "gstin",
+  INVALID_CLIENT_GSTIN: "gstin",
+  BOOKS_GSTIN_NOT_FOUND: "gstin",
+  GSTIN_MISMATCH: "gstin",
+  MISSING_RETURN_PERIOD: "returnPeriod",
+  PERIOD_MISMATCH: "returnPeriod",
+  BOOKS_RECONCILIATION_PERIOD_AMBIGUOUS: "returnPeriod",
+  BOOKS_PERIOD_NOT_FOUND: "returnPeriod",
+  NO_RECORDS: "rows",
+  NO_SALES_RECORDS: "rows",
+  GSTR1_TABLES_NOT_PARSED: "rows",
+  GSTR3B_TABLE_3_1_NOT_PARSED: "rows",
+  INVALID_COUNTERPARTY_GSTIN: "rows.counterpartyGstin",
+  DUPLICATE_INVOICE: "rows.invoiceNumber",
+  DUPLICATE_BOOKS_INVOICE: "rows.invoiceNumber",
+  INVOICE_TOTAL_INCONSISTENT: "rows.invoiceValue",
+  BOOKS_ROWS_WITHOUT_VALID_DATE: "rows.invoiceDate",
+  INVOICE_OUTSIDE_PERIOD: "rows.invoiceDate",
+  EMPTY_WORKBOOK: "sourceFile",
+  PDF_REVIEW_REQUIRED: "sourceFile",
+  SCANNED_PDF: "sourceFile",
+});
+
+export function rootFieldForAnomaly(code) {
+  return ANOMALY_ROOT_FIELDS[code] || "document";
+}
+
 function anomaly(code, severity, message, suggestion, rowIndex) {
-  return { code, severity, message, suggestion, ...(Number.isInteger(rowIndex) ? { rowIndex } : {}) };
+  return { code, severity, message, suggestion, rootField: rootFieldForAnomaly(code), ...(Number.isInteger(rowIndex) ? { rowIndex } : {}) };
 }
 
 export function auditNormalized(normalized) {

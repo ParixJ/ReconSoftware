@@ -22,6 +22,7 @@ export const documentsApi = {
     return api.post("/documents/upload", form, { onUploadProgress });
   },
   remove: (id) => api.delete(`/documents/${id}`),
+  removeMany: (documentIds) => api.delete("/documents", { data: { documentIds } }),
   updateMapping: (id, mapping) => api.put(`/documents/${id}/mapping`, mapping),
   updateViewPreference: (id, mode) => api.put(`/documents/${id}/view-preference`, { mode }),
 };

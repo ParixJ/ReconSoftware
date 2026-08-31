@@ -67,6 +67,15 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await gstr1Row.getByRole("button", { name: "Delete gstr1-march-2026.json" }).click();
   await expect(page.getByText("Document deleted")).toBeVisible();
   await expect(gstr1Row).toHaveCount(0);
+
+  await page.getByRole("checkbox", { name: "Clear document selection" }).click();
+  await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Select all documents" }).click();
+  await expect(page.getByText("2 selected", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete selected (2)" }).click();
+  await expect(page.getByText("2 documents deleted")).toBeVisible();
+  await expect(page.getByText("No documents uploaded")).toBeVisible();
 });
 
 test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {
