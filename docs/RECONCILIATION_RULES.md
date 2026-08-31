@@ -4,9 +4,13 @@ This release performs deterministic review checks; it does not file or modify a 
 
 ## Sales register to GSTR-1
 
-When a sales register is selected, its net taxable-outward control totals are compared with GSTR-1 for taxable value and each tax head. The register parser groups dated ledger rows by `MMYYYY`, separates B2B/B2C controls, and treats recognized credit entries as signed adjustments. For a multi-period workbook, only the bucket matching the single selected GSTR-1/GSTR-3B period is used. A selected register without that period is reported as a blocking data exception rather than compared as zero.
+When a sales register is selected, its net taxable-outward control totals are compared independently with both GSTR-1 and GSTR-3B for taxable value and each tax head. The register parser groups dated ledger rows by `MMYYYY`, separates B2B/B2C controls, and treats recognized credit entries as signed adjustments. Every selected return month uses only its matching sales-register bucket. A selected register without that month is reported as a `BOOKS_PERIOD_NOT_FOUND` exception rooted at `periods.MMYYYY`; it is never compared as zero.
 
 The books check is a control-total comparison. It does not claim invoice-level matching where a PDF return provides only section summaries.
+
+## Multiple return periods
+
+Selected returns are partitioned by `MMYYYY`. Each month produces one combined reconciliation group containing books-to-GSTR-1, books-to-GSTR-3B, GSTR-1-to-GSTR-3B, and optional GSTR-2B checks. Values from different months are never summed into one comparison. Multiple files of the same return type within one month are treated as ambiguous duplicates and raise a blocking exception instead of being aggregated.
 
 ## GSTR-1 to GSTR-3B liability
 

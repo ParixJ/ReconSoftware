@@ -73,9 +73,9 @@ test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", as
   const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
 
   assert.equal(reconciliation.status, "matched");
-  assert.equal(reconciliation.result.summary.totalChecks, 19);
-  const booksChecks = reconciliation.result.comparisons.filter((item) => item.kind === "books");
-  assert.equal(booksChecks.length, 5);
+  assert.equal(reconciliation.result.summary.totalChecks, 24);
+  const booksChecks = reconciliation.result.comparisons.filter((item) => item.kind.startsWith("books"));
+  assert.equal(booksChecks.length, 10);
   assert.ok(booksChecks.every((item) => item.status === "matched"));
   assert.equal(booksChecks[0].sourceLabel, "Sales register");
   assert.equal(booksChecks[0].filedLabel, "GSTR-1");
@@ -106,7 +106,7 @@ test("removes a resolved GSTIN exception from reconciliation GET results", async
 
   const initial = await runReconciliation(userId, { documentIds: [gstr1Id, gstr3bId], amountTolerance: 1, dateToleranceDays: 0 });
   const missingGstin = initial.result.exceptions.find((exception) => exception.code === "MISSING_CLIENT_GSTIN");
-  assert.ok(missingGstin.id.startsWith(`exception:${gstr1Id}:gstin:`));
+  assert.ok(missingGstin.id.startsWith(`exception:${gstr1Id}:042025:gstin:`));
   assert.equal(missingGstin.rootField, "gstin");
 
   updateMapping(userId, gstr1Id, { documentType: "gstr1", gstin, returnPeriod: "042025", fieldMap: {} });
@@ -117,6 +117,154 @@ test("removes a resolved GSTIN exception from reconciliation GET results", async
   assert.equal(refreshed.status, "matched");
   const listed = await listReconciliations(userId);
   assert.ok(!listed[0].result.exceptions.some((exception) => exception.id === missingGstin.id));
+});
+
+test("reconciles multiple return months independently against matching sales-register periods", async () => {
+  const userId = crypto.randomUUID();
+  const gstin = "29AABFB5678G1Z8";
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "multi-period@example.test", "Period Auditor", "test-only", new Date().toISOString());
+  const headers = [
+    "Bill Date", "Bill No", "C/D", "Party Name", "Party GSTIN No",
+    "Assessable Amount", "Central Tax-9.00%", "State/UT Tax-9.00%",
+    "Integrated Tax-18.00%", "Bill Amount",
+  ];
+  const books = parseSalesRegisterMatrix([
+    ["DEMO COMPANY", `GSTIN ${gstin}`],
+    headers,
+    ["15/04/2025", "APR-1", "Debit", "April buyer", "27AABCM1234F1ZX", 1000, 90, 90, 0, 1180],
+    ["15/05/2025", "MAY-1", "Debit", "May buyer", "27AABCM1234F1ZX", 2000, 180, 180, 0, 2360],
+  ], "sales-register.xlsx");
+  const aprilGstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN ${gstin} Tax period April 2025
+    B2B regular invoices 1 Invoice 1,000.00 0.00 90.00 90.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "gstr-1-apr-2025.pdf");
+  const mayGstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN ${gstin} Tax period May 2025
+    B2B regular invoices 1 Invoice 2,000.00 0.00 180.00 180.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "gstr-1-may-2025.pdf");
+  const aprilGstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN ${gstin} Period April 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 1,000.00 0.00 90.00 90.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "gstr-3b-apr-2025.pdf");
+  const mayGstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN ${gstin} Period May 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 2,000.00 0.00 180.00 180.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "gstr-3b-may-2025.pdf");
+  const documentIds = [
+    insertDocument(userId, "sales-register.xlsx", "xlsx", books),
+    insertDocument(userId, "gstr-1-apr-2025.pdf", "pdf", aprilGstr1),
+    insertDocument(userId, "gstr-3b-apr-2025.pdf", "pdf", aprilGstr3b),
+    insertDocument(userId, "gstr-1-may-2025.pdf", "pdf", mayGstr1),
+    insertDocument(userId, "gstr-3b-may-2025.pdf", "pdf", mayGstr3b),
+  ];
+
+  const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
+
+  assert.equal(reconciliation.status, "matched");
+  assert.deepEqual(reconciliation.result.periods.map((item) => item.returnPeriod), ["042025", "052025"]);
+  assert.equal(reconciliation.result.summary.totalChecks, 48);
+  for (const [returnPeriod, expectedTaxable] of [["042025", 1000], ["052025", 2000]]) {
+    const periodResult = reconciliation.result.periods.find((item) => item.returnPeriod === returnPeriod);
+    assert.equal(periodResult.summary.totalChecks, 24);
+    assert.equal(periodResult.exceptions.length, 0);
+    assert.equal(periodResult.comparisons.find((item) => item.table === "Books to GSTR-1" && item.measure === "taxableValue").sourceValue, expectedTaxable);
+    assert.equal(periodResult.comparisons.find((item) => item.table === "Books to GSTR-3B" && item.measure === "taxableValue").sourceValue, expectedTaxable);
+    assert.equal(periodResult.comparisons.find((item) => item.table === "3.1(a)" && item.measure === "taxableValue").sourceValue, expectedTaxable);
+  }
+  assert.ok(!reconciliation.result.exceptions.some((exception) => exception.code === "PERIOD_MISMATCH"));
+});
+
+test("adds an identified period exception when the sales register lacks a selected return month", async () => {
+  const userId = crypto.randomUUID();
+  const gstin = "29AABFB5678G1Z8";
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "missing-books-period@example.test", "Books Period Auditor", "test-only", new Date().toISOString());
+  const headers = [
+    "Bill Date", "Bill No", "C/D", "Party Name", "Party GSTIN No",
+    "Assessable Amount", "Central Tax-9.00%", "State/UT Tax-9.00%",
+    "Integrated Tax-18.00%", "Bill Amount",
+  ];
+  const books = parseSalesRegisterMatrix([
+    ["DEMO COMPANY", `GSTIN ${gstin}`],
+    headers,
+    ["15/04/2025", "APR-1", "Debit", "April buyer", "27AABCM1234F1ZX", 1000, 90, 90, 0, 1180],
+  ], "sales-register-april.xlsx");
+  const gstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN ${gstin} Tax period May 2025
+    B2B regular invoices 1 Invoice 2,000.00 0.00 180.00 180.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "gstr-1-may-2025.pdf");
+  const gstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN ${gstin} Period May 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 2,000.00 0.00 180.00 180.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "gstr-3b-may-2025.pdf");
+  const documentIds = [
+    insertDocument(userId, "sales-register-april.xlsx", "xlsx", books),
+    insertDocument(userId, "gstr-1-may-2025.pdf", "pdf", gstr1),
+    insertDocument(userId, "gstr-3b-may-2025.pdf", "pdf", gstr3b),
+  ];
+
+  const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
+  const may = reconciliation.result.periods.find((item) => item.returnPeriod === "052025");
+  const exception = may.exceptions.find((item) => item.code === "BOOKS_PERIOD_NOT_FOUND");
+
+  assert.equal(may.comparisons.filter((item) => item.kind.startsWith("books")).length, 0);
+  assert.equal(may.comparisons.find((item) => item.table === "3.1(a)" && item.measure === "taxableValue").difference, 0);
+  assert.equal(exception.rootField, "periods.052025");
+  assert.ok(exception.id.includes(":052025:periods.052025:BOOKS_PERIOD_NOT_FOUND:"));
+  assert.equal(reconciliation.status, "needs_review");
+});
+
+test("does not sum duplicate returns within the same month", async () => {
+  const userId = crypto.randomUUID();
+  const gstin = "29AABFB5678G1Z8";
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "duplicate-period@example.test", "Duplicate Period Auditor", "test-only", new Date().toISOString());
+  const gstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN ${gstin} Tax period April 2025
+    B2B regular invoices 1 Invoice 1,000.00 0.00 90.00 90.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "gstr-1-apr-2025.pdf");
+  const gstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN ${gstin} Period April 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 1,000.00 0.00 90.00 90.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "gstr-3b-apr-2025.pdf");
+  const documentIds = [
+    insertDocument(userId, "gstr-1-apr-2025.pdf", "pdf", gstr1),
+    insertDocument(userId, "gstr-3b-apr-2025-a.pdf", "pdf", gstr3b),
+    insertDocument(userId, "gstr-3b-apr-2025-b.pdf", "pdf", gstr3b),
+  ];
+
+  const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
+  const april = reconciliation.result.periods[0];
+
+  assert.ok(april.exceptions.some((exception) => exception.code === "MULTIPLE_GSTR3B_FOR_PERIOD" && exception.rootField === "returnPeriod"));
+  assert.equal(april.comparisons.length, 0);
+  assert.equal(april.summary.totalChecks, 0);
+  assert.equal(reconciliation.status, "needs_review");
 });
 
 test.after(() => {

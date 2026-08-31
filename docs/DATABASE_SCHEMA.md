@@ -27,4 +27,4 @@ Stores owner, safe storage name, detected file/document type, GSTIN, period, sta
 
 ## `reconciliations`
 
-Stores owner, selected document IDs, tolerances, status, the comparison-result snapshot, and creation time. Comparison values remain the recorded run snapshot. Reconciliation GET responses overlay integrity exceptions evaluated from current document mappings so resolved mapping defects are not presented as active exceptions.
+Stores owner, selected document IDs, tolerances, status, the comparison-result snapshot, and creation time. Result JSON contains a `periods` array with independent monthly comparison groups. Reconciliation GET responses re-evaluate the selected documents with their current mappings so resolved defects disappear and corrected return periods move into the proper monthly group.

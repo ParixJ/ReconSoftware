@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { getDb } from "../db/database.js";
 import { AppError } from "../errors.js";
-import { rowsForReconciliation } from "./documentService.js";
-import { addMoney, asNumber, emptyMoney, jsonSafeParse } from "../parsers/utils.js";
 import { rootFieldForAnomaly } from "../parsers/anomalies.js";
+import { addMoney, asNumber, emptyMoney, jsonSafeParse } from "../parsers/utils.js";
+import { rowsForReconciliation } from "./documentService.js";
 
 const LIABILITY_DEFINITIONS = [
   { category: "taxableOutward", table: "3.1(a)", label: "Taxable outward supplies", measures: ["taxableValue", "igst", "cgst", "sgst", "cess"] },
@@ -21,9 +21,20 @@ const MEASURE_LABELS = {
   cess: "Cess",
 };
 
+const MAIN_RETURN_TYPES = new Set(["gstr1", "gstr3b"]);
+
+function validPeriod(value) {
+  return /^(0[1-9]|1[0-2])\d{4}$/.test(value || "");
+}
+
+function periodSortKey(value) {
+  return validPeriod(value) ? `${value.slice(2)}${value.slice(0, 2)}` : "999999";
+}
+
 function exceptionId(exception) {
   const parts = [
     exception.documentId || "selection",
+    exception.returnPeriod || "unassigned",
     exception.rootField || rootFieldForAnomaly(exception.code),
     exception.code || "UNKNOWN_EXCEPTION",
     Number.isInteger(exception.rowIndex) ? `row-${exception.rowIndex}` : "root",
@@ -31,10 +42,10 @@ function exceptionId(exception) {
   return `exception:${parts.map((part) => String(part).replace(/[^A-Za-z0-9_.-]+/g, "-")).join(":")}`;
 }
 
-function identifyExceptions(exceptions) {
+function identifyExceptions(exceptions, returnPeriod) {
   const identified = exceptions.map((exception) => {
     const rootField = exception.rootField || rootFieldForAnomaly(exception.code);
-    const item = { ...exception, rootField };
+    const item = { ...exception, returnPeriod: exception.returnPeriod ?? returnPeriod, rootField };
     return { ...item, id: exceptionId(item) };
   });
   return [...new Map(identified.map((exception) => [exception.id, exception])).values()];
@@ -62,7 +73,7 @@ function salesRegisterSummaryForPeriod(documents, returnPeriod) {
   return { total, includedDocumentIds };
 }
 
-function comparison({ table, label, measure, left, right, tolerance, kind = "liability", sourceLabel = "GSTR-1", filedLabel = "GSTR-3B" }) {
+function comparison({ returnPeriod, table, label, measure, left, right, tolerance, kind = "liability", sourceLabel = "GSTR-1", filedLabel = "GSTR-3B" }) {
   const difference = asNumber(left) - asNumber(right);
   const matched = Math.abs(difference) <= tolerance;
   let risk = "none";
@@ -79,15 +90,16 @@ function comparison({ table, label, measure, left, right, tolerance, kind = "lia
   } else if (!matched && kind === "itc") {
     risk = "medium";
     suggestion = "Available ITC exceeds the claim. Check deferred credits, reversals, imports, and timing differences.";
-  } else if (!matched && kind === "books" && difference > 0) {
+  } else if (!matched && kind.startsWith("books") && difference > 0) {
     risk = "high";
-    suggestion = "The sales register is higher than GSTR-1. Review invoices, debit notes, and timing items that may be missing from the filed return.";
-  } else if (!matched && kind === "books") {
+    suggestion = `The sales register is higher than ${filedLabel}. Review invoices, debit notes, and timing items missing from the filed return.`;
+  } else if (!matched && kind.startsWith("books")) {
     risk = "medium";
-    suggestion = "GSTR-1 is higher than the sales register. Review amendments, credit notes, mapping, and entries posted outside the selected books extract.";
+    suggestion = `${filedLabel} is higher than the sales register. Review amendments, credit notes, mapping, and entries posted outside the selected books extract.`;
   }
   return {
-    id: `${kind === "books" ? "books-" : ""}${table}-${measure}`,
+    id: `${returnPeriod || "unassigned"}-${kind}-${table}-${measure}`,
+    returnPeriod,
     table,
     label,
     measure,
@@ -104,23 +116,40 @@ function comparison({ table, label, measure, left, right, tolerance, kind = "lia
   };
 }
 
+function identityExceptions(documents) {
+  const exceptions = [];
+  const gstins = [...new Set(documents.map((document) => document.gstin).filter(Boolean))];
+  const periods = [...new Set(documents.map((document) => document.returnPeriod).filter(Boolean))];
+  if (gstins.length > 1) exceptions.push({ code: "GSTIN_MISMATCH", severity: "error", message: `Selected documents contain different client GSTINs: ${gstins.join(", ")}.`, suggestion: "Remove the unrelated file or correct its client GSTIN in Modify mapping." });
+  if (periods.length > 1) exceptions.push({ code: "PERIOD_MISMATCH", severity: "error", message: `Selected documents contain different periods: ${periods.join(", ")}.`, suggestion: "Correct the affected return period in Modify mapping." });
+  for (const document of documents) {
+    for (const item of document.anomalies || []) exceptions.push({ ...item, documentId: document.id, documentName: document.originalName });
+  }
+  return exceptions;
+}
+
 function salesRegisterPeriodExceptions(documents, returnPeriod, includedDocumentIds) {
   if (!documents.length) return [];
-  if (!returnPeriod) return [{
-    code: "BOOKS_RECONCILIATION_PERIOD_AMBIGUOUS",
-    severity: "error",
-    message: "A single GSTR-1/GSTR-3B return period is required before the sales register can be compared.",
-    suggestion: "Select returns for one matching period, then run the books comparison again.",
-  }];
   const included = new Set(includedDocumentIds);
   return documents.filter((document) => !included.has(document.id)).map((document) => ({
     code: "BOOKS_PERIOD_NOT_FOUND",
     severity: "error",
+    rootField: `periods.${returnPeriod}`,
     documentId: document.id,
     documentName: document.originalName,
-    message: `${document.originalName} has no sales-register totals for ${returnPeriod}.`,
-    suggestion: "Upload a register containing the selected return period or remove this file from the reconciliation.",
+    message: `${document.originalName} has no sales-register entries for ${returnPeriod}.`,
+    suggestion: "Upload a register containing this return period or remove this file from the reconciliation.",
   }));
+}
+
+function returnCardinalityExceptions(gstr1, gstr3b, gstr2b, returnPeriod) {
+  const exceptions = [];
+  if (!gstr1.length) exceptions.push({ code: "GSTR1_PERIOD_NOT_FOUND", severity: "error", rootField: "returnPeriod", message: `No GSTR-1 was selected for ${returnPeriod}.`, suggestion: "Select the GSTR-1 for this month or correct its return period mapping." });
+  if (!gstr3b.length) exceptions.push({ code: "GSTR3B_PERIOD_NOT_FOUND", severity: "error", rootField: "returnPeriod", message: `No GSTR-3B was selected for ${returnPeriod}.`, suggestion: "Select the GSTR-3B for this month or correct its return period mapping." });
+  if (gstr1.length > 1) exceptions.push({ code: "MULTIPLE_GSTR1_FOR_PERIOD", severity: "error", rootField: "returnPeriod", message: `${gstr1.length} GSTR-1 files were selected for ${returnPeriod}.`, suggestion: "Keep one GSTR-1 for this GSTIN and month; duplicate monthly returns are not summed." });
+  if (gstr3b.length > 1) exceptions.push({ code: "MULTIPLE_GSTR3B_FOR_PERIOD", severity: "error", rootField: "returnPeriod", message: `${gstr3b.length} GSTR-3B files were selected for ${returnPeriod}.`, suggestion: "Keep one GSTR-3B for this GSTIN and month; duplicate monthly returns are not summed." });
+  if (gstr2b.length > 1) exceptions.push({ code: "MULTIPLE_GSTR2B_FOR_PERIOD", severity: "error", rootField: "returnPeriod", message: `${gstr2b.length} GSTR-2/2B files were selected for ${returnPeriod}.`, suggestion: "Keep one GSTR-2/2B for this GSTIN and month; duplicate monthly returns are not summed." });
+  return exceptions;
 }
 
 function parseInvoiceDate(value) {
@@ -129,23 +158,11 @@ function parseInvoiceDate(value) {
 }
 
 function periodBounds(period, toleranceDays) {
-  if (!/^(0[1-9]|1[0-2])\d{4}$/.test(period || "")) return null;
+  if (!validPeriod(period)) return null;
   const month = Number(period.slice(0, 2)) - 1;
   const year = Number(period.slice(2));
   const delta = toleranceDays * 86400000;
   return { start: new Date(Date.UTC(year, month, 1) - delta), end: new Date(Date.UTC(year, month + 1, 0) + delta) };
-}
-
-function identityExceptions(documents) {
-  const exceptions = [];
-  const gstins = [...new Set(documents.map((document) => document.gstin).filter(Boolean))];
-  const periods = [...new Set(documents.map((document) => document.returnPeriod).filter(Boolean))];
-  if (gstins.length > 1) exceptions.push({ code: "GSTIN_MISMATCH", severity: "error", message: `Selected documents contain different client GSTINs: ${gstins.join(", ")}.`, suggestion: "Remove the unrelated file or correct its client GSTIN in Modify mapping." });
-  if (periods.length > 1) exceptions.push({ code: "PERIOD_MISMATCH", severity: "error", message: `Selected documents contain different periods: ${periods.join(", ")}.`, suggestion: "Reconcile one return period at a time or correct the period in Modify mapping." });
-  for (const document of documents) {
-    for (const item of document.anomalies || []) exceptions.push({ ...item, documentId: document.id, documentName: document.originalName });
-  }
-  return exceptions;
 }
 
 function dateExceptions(documents, toleranceDays) {
@@ -171,21 +188,7 @@ function dateExceptions(documents, toleranceDays) {
   return exceptions;
 }
 
-function activeExceptions(documents, dateToleranceDays) {
-  const gstr1 = documents.filter((item) => item.documentType === "gstr1");
-  const gstr3b = documents.filter((item) => item.documentType === "gstr3b");
-  const salesRegisters = documents.filter((item) => item.documentType === "salesRegister");
-  const filedPeriods = [...new Set([...gstr1, ...gstr3b].map((document) => document.returnPeriod).filter(Boolean))];
-  const comparisonPeriod = filedPeriods.length === 1 ? filedPeriods[0] : null;
-  const booksForPeriod = salesRegisterSummaryForPeriod(salesRegisters, comparisonPeriod);
-  return identifyExceptions([
-    ...identityExceptions(documents),
-    ...salesRegisterPeriodExceptions(salesRegisters, comparisonPeriod, booksForPeriod.includedDocumentIds),
-    ...dateExceptions(documents, dateToleranceDays),
-  ]);
-}
-
-function currentDocumentSummary(documents) {
+function documentSummary(documents) {
   return documents.map((item) => ({
     id: item.id,
     originalName: item.originalName,
@@ -194,6 +197,158 @@ function currentDocumentSummary(documents) {
     returnPeriod: item.returnPeriod,
     recordCount: item.recordCount,
   }));
+}
+
+function resultSummary(comparisons, exceptions) {
+  const mismatches = comparisons.filter((item) => item.status === "mismatch");
+  return {
+    totalChecks: comparisons.length,
+    matched: comparisons.length - mismatches.length,
+    mismatched: mismatches.length,
+    exceptions: exceptions.length,
+    highRisk: mismatches.filter((item) => item.risk === "high").length + exceptions.filter((item) => item.severity === "error").length,
+    totalAbsoluteDifference: mismatches.reduce((sum, item) => sum + Math.abs(item.difference), 0),
+  };
+}
+
+function suggestionsFor(comparisons, exceptions) {
+  return [...new Set([
+    ...comparisons.filter((item) => item.status === "mismatch").map((item) => item.suggestion).filter(Boolean),
+    ...exceptions.map((item) => item.suggestion).filter(Boolean),
+  ])];
+}
+
+function addBooksComparisons(comparisons, returnPeriod, booksTotal, filedDocument, filedLabel, amountTolerance) {
+  const filed = aggregateSummary([filedDocument], "taxableOutward");
+  for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
+    returnPeriod,
+    table: `Books to ${filedLabel}`,
+    label: "Taxable outward supplies",
+    measure,
+    left: booksTotal[measure],
+    right: filed[measure],
+    tolerance: amountTolerance,
+    kind: filedLabel === "GSTR-1" ? "books-gstr1" : "books-gstr3b",
+    sourceLabel: "Sales register",
+    filedLabel,
+  }));
+}
+
+function buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleranceDays) {
+  const gstr1 = documents.filter((item) => item.documentType === "gstr1" && item.returnPeriod === returnPeriod);
+  const gstr3b = documents.filter((item) => item.documentType === "gstr3b" && item.returnPeriod === returnPeriod);
+  const gstr2b = documents.filter((item) => ["gstr2", "gstr2b"].includes(item.documentType) && item.returnPeriod === returnPeriod);
+  const salesRegisters = documents.filter((item) => item.documentType === "salesRegister");
+  const booksForPeriod = salesRegisterSummaryForPeriod(salesRegisters, returnPeriod);
+  const includedBooks = salesRegisters.filter((document) => booksForPeriod.includedDocumentIds.includes(document.id));
+  const periodDocuments = [...gstr1, ...gstr3b, ...gstr2b, ...includedBooks];
+  const exceptions = identifyExceptions([
+    ...identityExceptions(periodDocuments),
+    ...returnCardinalityExceptions(gstr1, gstr3b, gstr2b, returnPeriod),
+    ...salesRegisterPeriodExceptions(salesRegisters, returnPeriod, booksForPeriod.includedDocumentIds),
+    ...dateExceptions(gstr1, dateToleranceDays),
+  ], returnPeriod);
+  const comparisons = [];
+  const gstinConflict = new Set(periodDocuments.map((document) => document.gstin).filter(Boolean)).size > 1;
+  const usableGstr1 = gstr1.length === 1 && !gstinConflict;
+  const usableGstr3b = gstr3b.length === 1 && !gstinConflict;
+
+  if (booksForPeriod.includedDocumentIds.length && usableGstr1) {
+    addBooksComparisons(comparisons, returnPeriod, booksForPeriod.total, gstr1[0], "GSTR-1", amountTolerance);
+  }
+  if (booksForPeriod.includedDocumentIds.length && usableGstr3b) {
+    addBooksComparisons(comparisons, returnPeriod, booksForPeriod.total, gstr3b[0], "GSTR-3B", amountTolerance);
+  }
+  if (usableGstr1 && usableGstr3b) {
+    for (const definition of LIABILITY_DEFINITIONS) {
+      const source = aggregateSummary(gstr1, definition.category);
+      const filed = aggregateSummary(gstr3b, definition.category);
+      for (const measure of definition.measures) comparisons.push(comparison({
+        returnPeriod,
+        table: definition.table,
+        label: definition.label,
+        measure,
+        left: source[measure],
+        right: filed[measure],
+        tolerance: amountTolerance,
+      }));
+    }
+  }
+  if (gstr2b.length === 1 && usableGstr3b) {
+    const reverseChargeSource = aggregateSummary(gstr2b, "reverseCharge");
+    const reverseChargeFiled = aggregateSummary(gstr3b, "reverseCharge");
+    for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
+      returnPeriod,
+      table: "3.1(d)", label: "Inward supplies liable to reverse charge", measure,
+      left: reverseChargeSource[measure], right: reverseChargeFiled[measure], tolerance: amountTolerance,
+      sourceLabel: "GSTR-2/2B", filedLabel: "GSTR-3B",
+    }));
+    const available = aggregateSummary(gstr2b, "itcAvailable");
+    addMoney(available, reverseChargeSource);
+    const claimed = aggregateSummary(gstr3b, "itcClaimed");
+    for (const measure of ["igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
+      returnPeriod,
+      table: "4(A)", label: "Input tax credit", measure,
+      left: available[measure], right: claimed[measure], tolerance: amountTolerance, kind: "itc",
+      sourceLabel: "GSTR-2/2B", filedLabel: "GSTR-3B",
+    }));
+  }
+
+  const summary = resultSummary(comparisons, exceptions);
+  return {
+    returnPeriod,
+    clientGstin: periodDocuments.map((item) => item.gstin).find(Boolean) || null,
+    status: summary.mismatched || summary.exceptions ? "needs_review" : "matched",
+    documents: documentSummary(periodDocuments),
+    summary,
+    comparisons,
+    exceptions,
+    suggestions: suggestionsFor(comparisons, exceptions),
+  };
+}
+
+function buildUnassignedResult(documents) {
+  const exceptions = identifyExceptions(identityExceptions(documents), null);
+  const summary = resultSummary([], exceptions);
+  return {
+    returnPeriod: null,
+    clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
+    status: "needs_review",
+    documents: documentSummary(documents),
+    summary,
+    comparisons: [],
+    exceptions,
+    suggestions: suggestionsFor([], exceptions),
+  };
+}
+
+function buildReconciliationResult(documents, amountTolerance, dateToleranceDays) {
+  const returnPeriods = [...new Set(documents
+    .filter((document) => MAIN_RETURN_TYPES.has(document.documentType) && validPeriod(document.returnPeriod))
+    .map((document) => document.returnPeriod))]
+    .sort((left, right) => periodSortKey(left).localeCompare(periodSortKey(right)));
+  const periods = returnPeriods.map((returnPeriod) => buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleranceDays));
+  const unassignedDocuments = documents.filter((document) => (
+    document.documentType === "unknown"
+    || (MAIN_RETURN_TYPES.has(document.documentType) && !validPeriod(document.returnPeriod))
+  ));
+  if (unassignedDocuments.length) periods.push(buildUnassignedResult(unassignedDocuments));
+
+  const comparisons = periods.flatMap((item) => item.comparisons);
+  const exceptions = periods.flatMap((item) => item.exceptions);
+  const summary = resultSummary(comparisons, exceptions);
+  const knownPeriods = periods.map((item) => item.returnPeriod).filter(Boolean);
+  return {
+    clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
+    returnPeriod: knownPeriods.length === 1 ? knownPeriods[0] : null,
+    periods,
+    documents: documentSummary(documents),
+    summary,
+    comparisons,
+    exceptions,
+    suggestions: suggestionsFor(comparisons, exceptions),
+    methodology: `${documents.some((item) => item.documentType === "salesRegister") ? "Monthly sales-register totals mapped independently to GSTR-1 and GSTR-3B; " : ""}each return period reconciled independently for GSTR-1 liability, GSTR-3B liability and optional GSTR-2B ITC.`,
+  };
 }
 
 function serialize(row) {
@@ -209,46 +364,19 @@ function serialize(row) {
   };
 }
 
-function withCurrentExceptions(reconciliation, documents) {
-  const result = reconciliation.result || {};
-  const comparisons = result.comparisons || [];
-  const exceptions = activeExceptions(documents, reconciliation.dateToleranceDays);
-  const mismatches = comparisons.filter((item) => item.status === "mismatch");
-  const highRisk = mismatches.filter((item) => item.risk === "high").length + exceptions.filter((item) => item.severity === "error").length;
-  return {
-    ...reconciliation,
-    status: mismatches.length || exceptions.length ? "needs_review" : "matched",
-    result: {
-      ...result,
-      clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
-      returnPeriod: documents.map((item) => item.returnPeriod).find(Boolean) || null,
-      documents: currentDocumentSummary(documents),
-      summary: {
-        ...(result.summary || {}),
-        exceptions: exceptions.length,
-        highRisk,
-      },
-      exceptions,
-      suggestions: [...new Set([
-        ...mismatches.map((item) => item.suggestion).filter(Boolean),
-        ...exceptions.map((item) => item.suggestion).filter(Boolean),
-      ])],
-    },
-  };
-}
-
-async function serializeWithCurrentExceptions(userId, row, documentsPromise) {
+async function serializeCurrent(userId, row, documentsPromise) {
   const reconciliation = serialize(row);
   try {
     const documents = await (documentsPromise || rowsForReconciliation(userId, reconciliation.documentIds));
-    return withCurrentExceptions(reconciliation, documents);
+    const result = buildReconciliationResult(documents, reconciliation.amountTolerance, reconciliation.dateToleranceDays);
+    return { ...reconciliation, status: result.summary.mismatched || result.summary.exceptions ? "needs_review" : "matched", result };
   } catch (error) {
     if (!(error instanceof AppError)) throw error;
     return {
       ...reconciliation,
       result: {
         ...reconciliation.result,
-        exceptions: identifyExceptions(reconciliation.result?.exceptions || []),
+        exceptions: identifyExceptions(reconciliation.result?.exceptions || [], reconciliation.result?.returnPeriod || null),
       },
     };
   }
@@ -263,88 +391,12 @@ export async function runReconciliation(userId, input) {
   if (!Number.isInteger(dateToleranceDays) || dateToleranceDays < 0 || dateToleranceDays > 90) throw new AppError(400, "INVALID_DATE_TOLERANCE", "Date tolerance must be a whole number from 0 to 90 days.");
 
   const documents = await rowsForReconciliation(userId, documentIds);
-  const gstr1 = documents.filter((item) => item.documentType === "gstr1");
-  const gstr3b = documents.filter((item) => item.documentType === "gstr3b");
-  const gstr2b = documents.filter((item) => item.documentType === "gstr2b" || item.documentType === "gstr2");
-  const salesRegisters = documents.filter((item) => item.documentType === "salesRegister");
-  if (!gstr1.length || !gstr3b.length) {
+  if (!documents.some((item) => item.documentType === "gstr1") || !documents.some((item) => item.documentType === "gstr3b")) {
     throw new AppError(422, "REQUIRED_RETURNS_MISSING", "Select at least one GSTR-1 and one GSTR-3B document. Sales registers and GSTR-2B are optional additional checks.");
   }
 
-  const comparisons = [];
-  const filedPeriods = [...new Set([...gstr1, ...gstr3b].map((document) => document.returnPeriod).filter(Boolean))];
-  const comparisonPeriod = filedPeriods.length === 1 ? filedPeriods[0] : null;
-  const booksForPeriod = salesRegisterSummaryForPeriod(salesRegisters, comparisonPeriod);
-  if (booksForPeriod.includedDocumentIds.length) {
-    const filed = aggregateSummary(gstr1, "taxableOutward");
-    for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
-      table: "Books to GSTR-1",
-      label: "Taxable outward supplies",
-      measure,
-      left: booksForPeriod.total[measure],
-      right: filed[measure],
-      tolerance: amountTolerance,
-      kind: "books",
-      sourceLabel: "Sales register",
-      filedLabel: "GSTR-1",
-    }));
-  }
-  for (const definition of LIABILITY_DEFINITIONS) {
-    const source = aggregateSummary(gstr1, definition.category);
-    const filed = aggregateSummary(gstr3b, definition.category);
-    for (const measure of definition.measures) comparisons.push(comparison({
-      table: definition.table,
-      label: definition.label,
-      measure,
-      left: source[measure],
-      right: filed[measure],
-      tolerance: amountTolerance,
-    }));
-  }
-  if (gstr2b.length) {
-    const reverseChargeSource = aggregateSummary(gstr2b, "reverseCharge");
-    const reverseChargeFiled = aggregateSummary(gstr3b, "reverseCharge");
-    for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
-      table: "3.1(d)", label: "Inward supplies liable to reverse charge", measure,
-      left: reverseChargeSource[measure], right: reverseChargeFiled[measure], tolerance: amountTolerance,
-      sourceLabel: "GSTR-2/2B", filedLabel: "GSTR-3B",
-    }));
-    const available = aggregateSummary(gstr2b, "itcAvailable");
-    addMoney(available, reverseChargeSource);
-    const claimed = aggregateSummary(gstr3b, "itcClaimed");
-    for (const measure of ["igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
-      table: "4(A)", label: "Input tax credit", measure,
-      left: available[measure], right: claimed[measure], tolerance: amountTolerance, kind: "itc",
-      sourceLabel: "GSTR-2/2B", filedLabel: "GSTR-3B",
-    }));
-  }
-
-  const exceptions = identifyExceptions([
-    ...identityExceptions(documents),
-    ...salesRegisterPeriodExceptions(salesRegisters, comparisonPeriod, booksForPeriod.includedDocumentIds),
-    ...dateExceptions(documents, dateToleranceDays),
-  ]);
-  const mismatches = comparisons.filter((item) => item.status === "mismatch");
-  const highRisk = mismatches.filter((item) => item.risk === "high").length + exceptions.filter((item) => item.severity === "error").length;
-  const suggestions = [...new Set([...mismatches.map((item) => item.suggestion), ...exceptions.map((item) => item.suggestion).filter(Boolean)])];
-  const result = {
-    clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
-    returnPeriod: documents.map((item) => item.returnPeriod).find(Boolean) || null,
-    documents: currentDocumentSummary(documents),
-    summary: {
-      totalChecks: comparisons.length,
-      matched: comparisons.length - mismatches.length,
-      mismatched: mismatches.length,
-      exceptions: exceptions.length,
-      highRisk,
-      totalAbsoluteDifference: mismatches.reduce((sum, item) => sum + Math.abs(item.difference), 0),
-    },
-    comparisons,
-    exceptions,
-    suggestions,
-    methodology: `${salesRegisters.length ? "Sales-register taxable outward totals mapped to GSTR-1; " : ""}GSTR-1 liability tables mapped to GSTR-3B 3.1(a/b/c/e); optional GSTR-2B ITC mapped to GSTR-3B 4(A).`,
-  };
-  const status = mismatches.length || exceptions.length ? "needs_review" : "matched";
+  const result = buildReconciliationResult(documents, amountTolerance, dateToleranceDays);
+  const status = result.summary.mismatched || result.summary.exceptions ? "needs_review" : "matched";
   const row = {
     id: crypto.randomUUID(), user_id: userId, selected_document_ids: JSON.stringify(documentIds),
     amount_tolerance: amountTolerance, date_tolerance_days: dateToleranceDays, status,
@@ -364,12 +416,12 @@ export async function listReconciliations(userId) {
     const documentIds = jsonSafeParse(row.selected_document_ids, []);
     const cacheKey = [...documentIds].sort().join(":");
     if (!documentCache.has(cacheKey)) documentCache.set(cacheKey, rowsForReconciliation(userId, documentIds));
-    return serializeWithCurrentExceptions(userId, row, documentCache.get(cacheKey));
+    return serializeCurrent(userId, row, documentCache.get(cacheKey));
   }));
 }
 
 export async function getReconciliation(userId, id) {
   const row = getDb().prepare("SELECT * FROM reconciliations WHERE id = ? AND user_id = ?").get(id, userId);
   if (!row) throw new AppError(404, "RECONCILIATION_NOT_FOUND", "This reconciliation does not exist or is not available to your account.");
-  return serializeWithCurrentExceptions(userId, row);
+  return serializeCurrent(userId, row);
 }

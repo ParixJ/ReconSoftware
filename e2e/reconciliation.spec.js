@@ -78,6 +78,58 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByText("No documents uploaded")).toBeVisible();
 });
 
+test("auditor reconciles multiple return months in one combined tab per period", async ({ page }) => {
+  const gstin = "24AEXPS3034H1Z6";
+  const email = `period-auditor-${Date.now()}@example.test`;
+  const gstr1 = (fp, invoiceDate, taxableValue, tax) => ({
+    gstin,
+    fp,
+    b2b: [{
+      ctin: "24AAAAA0000A1Z5",
+      inv: [{ inum: `INV-${fp}`, idt: invoiceDate, val: taxableValue + (tax * 2), itms: [{ itm_det: { txval: taxableValue, camt: tax, samt: tax, iamt: 0, csamt: 0 } }] }],
+    }],
+  });
+  const gstr3b = (retPeriod, taxableValue, tax) => ({
+    gstin,
+    ret_period: retPeriod,
+    sup_details: {
+      osup_det: { txval: taxableValue, iamt: 0, camt: tax, samt: tax, csamt: 0 },
+      osup_zero: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+      osup_nil_exmp: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+      isup_rev: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+      osup_nongst: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+    },
+  });
+
+  await page.goto("/auth");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByLabel("Full name").fill("Multi-period Auditor");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill("safe-password-2026");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: "gstr1-april-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr1("042025", "15-04-2025", 1000, 90))) },
+    { name: "gstr3b-april-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b("042025", 1000, 90))) },
+    { name: "gstr1-may-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr1("052025", "15-05-2025", 2000, 180))) },
+    { name: "gstr3b-may-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b("052025", 2000, 180))) },
+  ]);
+  await expect(page.getByText("4 documents ready")).toBeVisible();
+  await page.getByRole("button", { name: "Run on 4 files" }).click();
+
+  await expect(page.getByRole("heading", { name: /2 return periods/ })).toBeVisible();
+  const aprilTab = page.getByRole("tab", { name: /Apr 2025/ });
+  const mayTab = page.getByRole("tab", { name: /May 2025/ });
+  await expect(aprilTab).toBeVisible();
+  await expect(mayTab).toBeVisible();
+  await expect(aprilTab).toHaveAttribute("aria-selected", "true");
+  await mayTab.click();
+  await expect(mayTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Files used for May 2025:")).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Reconciliation periods" }).getByRole("tab")).toHaveCount(2);
+});
+
 test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {
   const email = `mapping-auditor-${Date.now()}@example.test`;
   await page.goto("/auth");
