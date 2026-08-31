@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, FileSearch, LockKeyhole, Scale } from "lucide
 import { authApi, errorMessage } from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
 import Notice from "../components/Notice.jsx";
+import ThemeToggle from "../components/ThemeToggle.jsx";
 
 export default function AuthPage() {
   const [mode, setMode] = useState("login");
@@ -26,6 +27,7 @@ export default function AuthPage() {
 
   return (
     <main className="auth-page">
+      <div className="auth-theme-control"><ThemeToggle /></div>
       <section className="auth-context" aria-labelledby="product-title">
         <div className="brand"><span className="brand-mark"><Scale size={20} /></span><span>Reconcile GST</span></div>
         <div className="auth-message">

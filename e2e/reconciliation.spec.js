@@ -29,6 +29,33 @@ test.afterAll(async () => {
   closeDatabase();
 });
 
+test("auditor can choose and persist dark mode from the authentication page", async ({ page }) => {
+  const email = `theme-auditor-${Date.now()}@example.test`;
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/auth");
+  const rootElement = page.locator("html");
+  await expect(rootElement).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(rootElement).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".auth-card")).toHaveCSS("background-color", "rgb(23, 29, 25)");
+
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByLabel("Full name").fill("Theme Auditor");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill("safe-password-2026");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+
+  await expect(rootElement).toHaveAttribute("data-theme", "dark");
+  await expect(rootElement).toHaveCSS("color-scheme", "dark");
+  await expect(page.locator(".panel").first()).toHaveCSS("background-color", "rgb(23, 29, 25)");
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(rootElement).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
+});
+
 test("auditor uploads three returns, reviews mapping, and reconciles", async ({ page }) => {
   const email = `auditor-${Date.now()}@example.test`;
   await page.goto("/auth");
