@@ -106,6 +106,8 @@ test("removes a resolved GSTIN exception from reconciliation GET results", async
 
   const initial = await runReconciliation(userId, { documentIds: [gstr1Id, gstr3bId], amountTolerance: 1, dateToleranceDays: 0 });
   const missingGstin = initial.result.exceptions.find((exception) => exception.code === "MISSING_CLIENT_GSTIN");
+  assert.equal(initial.result.crossExamination.status, "partial");
+  assert.equal(initial.result.comparisons.length, 0);
   assert.ok(missingGstin.id.startsWith(`exception:${gstr1Id}:042025:gstin:`));
   assert.equal(missingGstin.rootField, "gstin");
 
@@ -113,6 +115,8 @@ test("removes a resolved GSTIN exception from reconciliation GET results", async
 
   const refreshed = await getReconciliation(userId, initial.id);
   assert.ok(!refreshed.result.exceptions.some((exception) => exception.id === missingGstin.id));
+  assert.equal(refreshed.result.crossExamination.status, "matched");
+  assert.equal(refreshed.result.comparisons.length, 14);
   assert.equal(refreshed.result.summary.exceptions, 0);
   assert.equal(refreshed.status, "matched");
   const listed = await listReconciliations(userId);
@@ -163,13 +167,12 @@ test("reconciles multiple return months independently against matching sales-reg
     (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
     (e) Non-GST outward supplies 0.00 - - - -
   `, "gstr-3b-may-2025.pdf");
-  const documentIds = [
-    insertDocument(userId, "sales-register.xlsx", "xlsx", books),
-    insertDocument(userId, "gstr-1-apr-2025.pdf", "pdf", aprilGstr1),
-    insertDocument(userId, "gstr-3b-apr-2025.pdf", "pdf", aprilGstr3b),
-    insertDocument(userId, "gstr-1-may-2025.pdf", "pdf", mayGstr1),
-    insertDocument(userId, "gstr-3b-may-2025.pdf", "pdf", mayGstr3b),
-  ];
+  const salesRegisterId = insertDocument(userId, "sales-register.xlsx", "xlsx", books);
+  const aprilGstr1Id = insertDocument(userId, "gstr-1-apr-2025.pdf", "pdf", aprilGstr1);
+  const aprilGstr3bId = insertDocument(userId, "gstr-3b-apr-2025.pdf", "pdf", aprilGstr3b);
+  const mayGstr1Id = insertDocument(userId, "gstr-1-may-2025.pdf", "pdf", mayGstr1);
+  const mayGstr3bId = insertDocument(userId, "gstr-3b-may-2025.pdf", "pdf", mayGstr3b);
+  const documentIds = [salesRegisterId, aprilGstr1Id, aprilGstr3bId, mayGstr1Id, mayGstr3bId];
 
   const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
 
@@ -185,6 +188,13 @@ test("reconciles multiple return months independently against matching sales-reg
     assert.equal(periodResult.comparisons.find((item) => item.table === "3.1(a)" && item.measure === "taxableValue").sourceValue, expectedTaxable);
   }
   assert.ok(!reconciliation.result.exceptions.some((exception) => exception.code === "PERIOD_MISMATCH"));
+
+  updateMapping(userId, mayGstr1Id, { documentType: "gstr1", gstin: "24AEXPS3034H1Z6", returnPeriod: "052025", fieldMap: {} });
+  const crossClientRefresh = await getReconciliation(userId, reconciliation.id);
+  assert.equal(crossClientRefresh.status, "needs_review");
+  assert.equal(crossClientRefresh.result.crossExamination.status, "mismatch");
+  assert.equal(crossClientRefresh.result.comparisons.length, 0);
+  assert.ok(crossClientRefresh.result.periods.every((item) => item.exceptions.some((exception) => exception.code === "GSTIN_MISMATCH" && exception.rootField === "gstin")));
 });
 
 test("adds an identified period exception when the sales register lacks a selected return month", async () => {
@@ -307,6 +317,50 @@ test("never loads an unselected GSTIN-less return into reconciliation", async ()
   assert.ok(!reconciliation.result.exceptions.some((exception) => exception.code === "MISSING_CLIENT_GSTIN"));
   assert.equal(reconciliation.result.periods.length, 1);
   assert.equal(reconciliation.result.periods[0].returnPeriod, "042025");
+});
+
+test("rejects a sales register selected with another client's GST returns", async () => {
+  const userId = crypto.randomUUID();
+  const booksGstin = "29AABFB5678G1Z8";
+  const returnGstin = "24AEXPS3034H1Z6";
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "cross-client-reconciliation@example.test", "Cross Client Auditor", "test-only", new Date().toISOString());
+  const headers = ["Bill Date", "Bill No", "Party Name", "Assessable Amount"];
+  const books = parseSalesRegisterMatrix([
+    ["CLIENT A", `GSTIN ${booksGstin}`],
+    headers,
+    ["15/04/2025", "INV-1", "Buyer", 1000],
+  ], "client-a-sales-register.xlsx");
+  const gstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN ${returnGstin} Tax period April 2025
+    B2B regular invoices 1 Invoice 1,000.00 0.00 90.00 90.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "client-b-gstr1.pdf");
+  const gstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN ${returnGstin} Period April 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 1,000.00 0.00 90.00 90.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "client-b-gstr3b.pdf");
+  const documentIds = [
+    insertDocument(userId, "client-a-sales-register.xlsx", "xlsx", books),
+    insertDocument(userId, "client-b-gstr1.pdf", "pdf", gstr1),
+    insertDocument(userId, "client-b-gstr3b.pdf", "pdf", gstr3b),
+  ];
+
+  await assert.rejects(
+    runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 }),
+    (error) => {
+      assert.equal(error.status, 422);
+      assert.equal(error.code, "CLIENT_GSTIN_MISMATCH");
+      assert.deepEqual(error.details.crossExamination.gstinGroups.map((group) => group.gstin), [booksGstin, returnGstin]);
+      return true;
+    },
+  );
+  assert.equal(getDb().prepare("SELECT COUNT(*) AS count FROM reconciliations WHERE user_id = ?").get(userId).count, 0);
 });
 
 test.after(() => {

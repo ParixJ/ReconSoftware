@@ -43,4 +43,6 @@ When both are selected, available ITC tax heads in GSTR-2B are compared with cla
 
 The engine provides a suggested review action for every exception. It does not infer a legal conclusion or alter source records.
 
+Client GSTIN cross-examination runs before reconciliation persistence. If two or more detected client GSTINs occur anywhere in the selected set, the run is rejected and no reconciliation record is created. A missing GSTIN is reported for mapping correction and makes that document ineligible for value comparisons until the identity is supplied.
+
 Each exception has a deterministic `id` and `rootField`. Document-scoped IDs combine the document ID, affected root field, exception code, and optional row index. Reconciliation GET responses re-evaluate integrity exceptions against the current document mapping, so an exception disappears when its underlying field is corrected while unresolved exceptions retain the same ID.

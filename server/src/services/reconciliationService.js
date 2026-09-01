@@ -23,6 +23,45 @@ const MEASURE_LABELS = {
 
 const MAIN_RETURN_TYPES = new Set(["gstr1", "gstr3b"]);
 
+function crossExaminationDocument(document) {
+  return {
+    id: document.id,
+    originalName: document.originalName,
+    documentType: document.documentType,
+  };
+}
+
+export function crossExamineClientGstins(documents) {
+  const groups = new Map();
+  const missingDocuments = [];
+  for (const document of documents) {
+    const gstin = String(document.gstin || "").trim().toUpperCase();
+    if (!gstin) {
+      missingDocuments.push(crossExaminationDocument(document));
+      continue;
+    }
+    if (!groups.has(gstin)) groups.set(gstin, []);
+    groups.get(gstin).push(crossExaminationDocument(document));
+  }
+  const gstinGroups = [...groups.entries()].map(([gstin, groupedDocuments]) => ({ gstin, documents: groupedDocuments }));
+  const status = gstinGroups.length > 1
+    ? "mismatch"
+    : gstinGroups.length === 0
+      ? "unverified"
+      : missingDocuments.length
+        ? "partial"
+        : "matched";
+  return {
+    status,
+    canReconcile: status !== "mismatch",
+    clientGstin: gstinGroups.length === 1 ? gstinGroups[0].gstin : null,
+    documentCount: documents.length,
+    identifiedCount: documents.length - missingDocuments.length,
+    gstinGroups,
+    missingDocuments,
+  };
+}
+
 function validPeriod(value) {
   return /^(0[1-9]|1[0-2])\d{4}$/.test(value || "");
 }
@@ -234,7 +273,7 @@ function addBooksComparisons(comparisons, returnPeriod, booksTotal, filedDocumen
   }));
 }
 
-function buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleranceDays) {
+function buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleranceDays, crossExamination) {
   const gstr1 = documents.filter((item) => item.documentType === "gstr1" && item.returnPeriod === returnPeriod);
   const gstr3b = documents.filter((item) => item.documentType === "gstr3b" && item.returnPeriod === returnPeriod);
   const gstr2b = documents.filter((item) => ["gstr2", "gstr2b"].includes(item.documentType) && item.returnPeriod === returnPeriod);
@@ -243,20 +282,31 @@ function buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleran
   const includedBooks = salesRegisters.filter((document) => booksForPeriod.includedDocumentIds.includes(document.id));
   const periodDocuments = [...gstr1, ...gstr3b, ...gstr2b, ...includedBooks];
   const exceptions = identifyExceptions([
+    ...(crossExamination.status === "mismatch" ? [{
+      code: "GSTIN_MISMATCH",
+      severity: "error",
+      rootField: "gstin",
+      message: `Selected documents contain different client GSTINs: ${crossExamination.gstinGroups.map((group) => group.gstin).join(", ")}.`,
+      suggestion: "Remove unrelated files or correct their client GSTIN mappings before reconciling this period.",
+    }] : []),
     ...identityExceptions(periodDocuments),
     ...returnCardinalityExceptions(gstr1, gstr3b, gstr2b, returnPeriod),
     ...salesRegisterPeriodExceptions(salesRegisters, returnPeriod, booksForPeriod.includedDocumentIds),
     ...dateExceptions(gstr1, dateToleranceDays),
   ], returnPeriod);
   const comparisons = [];
-  const gstinConflict = new Set(periodDocuments.map((document) => document.gstin).filter(Boolean)).size > 1;
-  const usableGstr1 = gstr1.length === 1 && !gstinConflict;
-  const usableGstr3b = gstr3b.length === 1 && !gstinConflict;
+  const gstinConflict = crossExamination.status === "mismatch"
+    || new Set(periodDocuments.map((document) => document.gstin).filter(Boolean)).size > 1;
+  const usableBooks = booksForPeriod.includedDocumentIds.length > 0
+    && includedBooks.every((document) => Boolean(document.gstin))
+    && !gstinConflict;
+  const usableGstr1 = gstr1.length === 1 && Boolean(gstr1[0].gstin) && !gstinConflict;
+  const usableGstr3b = gstr3b.length === 1 && Boolean(gstr3b[0].gstin) && !gstinConflict;
 
-  if (booksForPeriod.includedDocumentIds.length && usableGstr1) {
+  if (usableBooks && usableGstr1) {
     addBooksComparisons(comparisons, returnPeriod, booksForPeriod.total, gstr1[0], "GSTR-1", amountTolerance);
   }
-  if (booksForPeriod.includedDocumentIds.length && usableGstr3b) {
+  if (usableBooks && usableGstr3b) {
     addBooksComparisons(comparisons, returnPeriod, booksForPeriod.total, gstr3b[0], "GSTR-3B", amountTolerance);
   }
   if (usableGstr1 && usableGstr3b) {
@@ -274,7 +324,7 @@ function buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleran
       }));
     }
   }
-  if (gstr2b.length === 1 && usableGstr3b) {
+  if (gstr2b.length === 1 && Boolean(gstr2b[0].gstin) && usableGstr3b) {
     const reverseChargeSource = aggregateSummary(gstr2b, "reverseCharge");
     const reverseChargeFiled = aggregateSummary(gstr3b, "reverseCharge");
     for (const measure of ["taxableValue", "igst", "cgst", "sgst", "cess"]) comparisons.push(comparison({
@@ -323,11 +373,12 @@ function buildUnassignedResult(documents) {
 }
 
 function buildReconciliationResult(documents, amountTolerance, dateToleranceDays) {
+  const crossExamination = crossExamineClientGstins(documents);
   const returnPeriods = [...new Set(documents
     .filter((document) => MAIN_RETURN_TYPES.has(document.documentType) && validPeriod(document.returnPeriod))
     .map((document) => document.returnPeriod))]
     .sort((left, right) => periodSortKey(left).localeCompare(periodSortKey(right)));
-  const periods = returnPeriods.map((returnPeriod) => buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleranceDays));
+  const periods = returnPeriods.map((returnPeriod) => buildPeriodResult(documents, returnPeriod, amountTolerance, dateToleranceDays, crossExamination));
   const unassignedDocuments = documents.filter((document) => (
     document.documentType === "unknown"
     || (MAIN_RETURN_TYPES.has(document.documentType) && !validPeriod(document.returnPeriod))
@@ -339,8 +390,9 @@ function buildReconciliationResult(documents, amountTolerance, dateToleranceDays
   const summary = resultSummary(comparisons, exceptions);
   const knownPeriods = periods.map((item) => item.returnPeriod).filter(Boolean);
   return {
-    clientGstin: documents.map((item) => item.gstin).find(Boolean) || null,
+    clientGstin: crossExamination.clientGstin,
     returnPeriod: knownPeriods.length === 1 ? knownPeriods[0] : null,
+    crossExamination,
     periods,
     documents: documentSummary(documents),
     summary,
@@ -393,6 +445,17 @@ export async function runReconciliation(userId, input) {
   const documents = await rowsForReconciliation(userId, documentIds);
   if (!documents.some((item) => item.documentType === "gstr1") || !documents.some((item) => item.documentType === "gstr3b")) {
     throw new AppError(422, "REQUIRED_RETURNS_MISSING", "Select at least one GSTR-1 and one GSTR-3B document. Sales registers and GSTR-2B are optional additional checks.");
+  }
+
+  const crossExamination = crossExamineClientGstins(documents);
+  if (!crossExamination.canReconcile) {
+    const gstins = crossExamination.gstinGroups.map((group) => group.gstin).join(", ");
+    throw new AppError(
+      422,
+      "CLIENT_GSTIN_MISMATCH",
+      `Selected documents belong to different client GSTINs: ${gstins}. Remove the unrelated files or correct their client GSTIN mappings.`,
+      { crossExamination },
+    );
   }
 
   const result = buildReconciliationResult(documents, amountTolerance, dateToleranceDays);

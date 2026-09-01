@@ -301,6 +301,16 @@ tbody tr:hover td { background: var(--surface-hover); }
 .reconcile-copy p:last-child { margin: 2px 0 0; font-size: 11px; }
 .tolerance-controls { display: flex; gap: 10px; }
 .run-button { min-width: 148px; }
+.gstin-cross-examination { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: 9px; padding: 10px 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.gstin-cross-examination > svg { margin-top: 1px; }
+.gstin-cross-examination strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 12px; }
+.gstin-cross-examination p { margin: 0; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.gstin-cross-examination-matched { color: var(--success); background: var(--success-subtle); border-color: var(--success-border); }
+.gstin-cross-examination-matched strong { color: var(--success); }
+.gstin-cross-examination-mismatch { color: var(--danger); background: var(--danger-subtle); border-color: var(--danger-border); }
+.gstin-cross-examination-mismatch strong { color: var(--danger); }
+.gstin-cross-examination-partial, .gstin-cross-examination-unverified { color: var(--warning); background: var(--warning-subtle); border-color: var(--warning-border); }
+.gstin-cross-examination-partial strong, .gstin-cross-examination-unverified strong { color: var(--warning-text-strong); }
 
 .viewer-panel { min-height: 360px; overflow: hidden; }
 .viewer-heading { padding-bottom: 13px; }

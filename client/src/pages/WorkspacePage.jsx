@@ -8,6 +8,7 @@ import Notice from "../components/Notice.jsx";
 import ReconciliationControls from "../components/ReconciliationControls.jsx";
 import TopNav from "../components/TopNav.jsx";
 import UploadPanel from "../components/UploadPanel.jsx";
+import { crossExamineClientGstins } from "../utils/gstinCrossExamination.js";
 
 export default function WorkspacePage() {
   const navigate = useNavigate();
@@ -51,6 +52,7 @@ export default function WorkspacePage() {
   }, [requestedDetailId, details]);
 
   const selectedDocuments = useMemo(() => selectedIds.map((id) => documents.find((document) => document.id === id)).filter(Boolean), [selectedIds, documents]);
+  const crossExamination = useMemo(() => crossExamineClientGstins(selectedDocuments), [selectedDocuments]);
   const toggleSelection = (id) => {
     setSelectedIds((current) => {
       if (current.includes(id)) {
@@ -101,6 +103,10 @@ export default function WorkspacePage() {
   };
 
   const run = async () => {
+    if (!crossExamination.canReconcile) {
+      setNotice({ tone: "danger", title: "Client GSTIN mismatch", message: "Remove unrelated documents or correct their client GSTIN mappings before reconciliation." });
+      return;
+    }
     setRunning(true); setNotice(null);
     try {
       const documentIds = selectedDocuments.map((document) => document.id);
@@ -191,7 +197,7 @@ export default function WorkspacePage() {
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
             <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
-            <ReconciliationControls selectedCount={selectedDocuments.length} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
+            <ReconciliationControls selectedCount={selectedDocuments.length} crossExamination={crossExamination} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
             <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
           </>
         )}

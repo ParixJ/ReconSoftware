@@ -196,6 +196,52 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await expect(yearSelect).toHaveValue("2026");
 });
 
+test("auditor cannot reconcile documents belonging to different client GSTINs", async ({ page }) => {
+  const clientAGstin = "29AABFB5678G1Z8";
+  const clientBGstin = "24AEXPS3034H1Z6";
+  const email = `cross-examine-auditor-${Date.now()}@example.test`;
+  const gstr1 = {
+    gstin: clientAGstin,
+    fp: "042025",
+    b2b: [{ ctin: "24AAAAA0000A1Z5", inv: [{ inum: "INV-1", idt: "15-04-2025", val: 1180, itms: [{ itm_det: { txval: 1000, camt: 90, samt: 90, iamt: 0, csamt: 0 } }] }] }],
+  };
+  const gstr3b = {
+    gstin: clientBGstin,
+    ret_period: "042025",
+    sup_details: {
+      osup_det: { txval: 1000, iamt: 0, camt: 90, samt: 90, csamt: 0 },
+      osup_zero: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+      osup_nil_exmp: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+      isup_rev: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+      osup_nongst: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+    },
+  };
+
+  await page.goto("/auth");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByLabel("Full name").fill("Cross Examination Auditor");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill("safe-password-2026");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: "client-a-gstr1.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr1)) },
+    { name: "client-b-gstr3b.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b)) },
+  ]);
+
+  const crossExamination = page.locator(".gstin-cross-examination");
+  await expect(crossExamination.getByText("Client GSTIN mismatch", { exact: true })).toBeVisible();
+  await expect(crossExamination).toContainText(clientAGstin);
+  await expect(crossExamination).toContainText(clientBGstin);
+  await expect(page.getByRole("button", { name: "Resolve GSTIN mismatch" })).toBeDisabled();
+
+  const gstr3bRow = page.getByRole("row").filter({ hasText: "client-b-gstr3b.json" });
+  await gstr3bRow.getByRole("button", { name: "Modify mapping" }).click();
+  await page.getByLabel("Client GSTIN").fill(clientAGstin);
+  await page.getByRole("button", { name: "Save mapping" }).click();
+  await expect(page.getByText("GSTIN cross-examination passed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run on 2 files" })).toBeEnabled();
+});
+
 test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {
   const email = `mapping-auditor-${Date.now()}@example.test`;
   await page.goto("/auth");
