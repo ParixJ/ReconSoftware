@@ -64,6 +64,11 @@ test("auditor can choose and persist dark mode from the authentication page", as
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/auth");
   const rootElement = page.locator("html");
+  await expect(page.locator(".auth-context")).toHaveCount(0);
+  const authCardBounds = await page.locator(".auth-card").boundingBox();
+  const viewport = page.viewportSize();
+  expect(Math.abs((authCardBounds.x + authCardBounds.width / 2) - viewport.width / 2)).toBeLessThan(2);
+  expect(Math.abs((authCardBounds.y + authCardBounds.height / 2) - viewport.height / 2)).toBeLessThan(2);
   await expect(rootElement).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(rootElement).toHaveAttribute("data-theme", "dark");
