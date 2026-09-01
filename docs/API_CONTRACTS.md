@@ -23,6 +23,7 @@ Authentication uses the `gst_session` HTTP-only cookie.
 | PUT | `/api/documents/:id/view-preference` | Yes | `{mode:"original"|"hidden"}` → `{document}` |
 | POST | `/api/reconciliations` | Yes | `{documentIds,amountTolerance,dateToleranceDays}` → `{reconciliation}`; returns `422 CLIENT_GSTIN_MISMATCH` without saving when selected documents identify different clients |
 | GET | `/api/reconciliations` | Yes | → `{reconciliations[]}` |
+| GET | `/api/reconciliations/export?gstin=:gstin&year=:year` | Yes | Downloads the latest monthly reconciliations for the client/year as the two-sheet `GST_Reconciliation_*.xlsx` template |
 | GET | `/api/reconciliations/:id` | Yes | → `{reconciliation}` |
 
 Supported `documentType` values are `gstr1`, `gstr2`, `gstr2b`, `gstr3b`, `salesRegister`, and `unknown`. `fieldMap` keys are restricted to the server's canonical columns.

@@ -20,6 +20,32 @@ function fixture(relativePath) {
   return path.join(projectRoot, relativePath);
 }
 
+const sampleGstr1 = {
+  gstin: "24AEXPS3034H1Z6",
+  fp: "032026",
+  b2b: [{ ctin: "24AAAAA0000A1Z5", inv: [{ inum: "INV-1001", idt: "05-03-2026", val: 118000, pos: "24", rchrg: "N", itms: [{ num: 1, itm_det: { txval: 100000, rt: 18, camt: 9000, samt: 9000, iamt: 0, csamt: 0 } }] }] }],
+  b2cs: [{ pos: "27", rt: 18, txval: 25000, iamt: 4500, camt: 0, samt: 0, csamt: 0 }],
+  exp: [{ exp_typ: "WOPAY", inv: [{ inum: "EXP-2001", idt: "14-03-2026", val: 50000, itms: [{ num: 1, itm_det: { txval: 50000, rt: 0, iamt: 0, csamt: 0 } }] }] }],
+  cdnr: [{ ctin: "24AAAAA0000A1Z5", nt: [{ ntty: "C", nt_num: "CN-1", nt_dt: "20-03-2026", val: 11800, itms: [{ num: 1, itm_det: { txval: 10000, camt: 900, samt: 900, iamt: 0, csamt: 0 } }] }] }],
+  nil: { inv: [{ sply_ty: "INTRB2C", nil_amt: 6000, expt_amt: 4000, ngsup_amt: 5000 }] },
+};
+
+const sampleGstr3b = {
+  gstin: "24AEXPS3034H1Z6",
+  ret_period: "032026",
+  sup_details: {
+    osup_det: { txval: 114500, iamt: 4500, camt: 8055, samt: 8055, csamt: 0 },
+    osup_zero: { txval: 50000, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+    osup_nil_exmp: { txval: 10000, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+    isup_rev: { txval: 11640, iamt: 0, camt: 291, samt: 291, csamt: 0 },
+    osup_nongst: { txval: 5000, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+  },
+  inter_sup: { unreg_details: [{ pos: "27", txval: 25000, iamt: 4500 }] },
+  itc_elg: { itc_avl: [{ ty: "OTH", iamt: 131323.25, camt: 112804.54, samt: 112804.54, csamt: 0 }] },
+};
+
+const unmappedLedger = "Ledger Ref,Party Label,Net Figure,Tax Figure\nL-1001,Northwind Components,125000,22500\nL-1002,Contoso Industrial,84000,15120\n";
+
 test("provided GST JSON is recognized and normalized as GSTR-2B", async () => {
   const parsed = await parseUploadedFile(fixture("docs/returns_R2B_24AEXPS3034H1Z6_032026.json"), "returns_R2B_24AEXPS3034H1Z6_032026.json", "application/json");
   assert.equal(parsed.fileType, "json");
@@ -49,13 +75,12 @@ test("authenticated API isolates documents and runs the full three-return flow",
   }
   const cookie = await register("primary@example.test");
   const form = new FormData();
-  for (const [relativePath, type] of [
-    ["sample-docs/gstr1-march-2026.json", "application/json"],
-    ["sample-docs/gstr3b-march-2026.json", "application/json"],
-    ["docs/returns_R2B_24AEXPS3034H1Z6_032026.json", "application/json"],
+  for (const [name, content, type] of [
+    ["gstr1-march-2026.json", JSON.stringify(sampleGstr1), "application/json"],
+    ["gstr3b-march-2026.json", JSON.stringify(sampleGstr3b), "application/json"],
+    ["returns_R2B_24AEXPS3034H1Z6_032026.json", fs.readFileSync(fixture("docs/returns_R2B_24AEXPS3034H1Z6_032026.json")), "application/json"],
   ]) {
-    const source = fixture(relativePath);
-    form.append("files", new File([fs.readFileSync(source)], path.basename(source), { type }));
+    form.append("files", new File([content], name, { type }));
   }
   const uploadResponse = await fetch(`${base}/documents/upload`, { method: "POST", headers: { cookie }, body: form });
   assert.equal(uploadResponse.status, 201);
@@ -78,8 +103,7 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.ok(reconciliation.result.suggestions.some((item) => item.includes("GSTR-1 is higher")));
 
   const unmappedForm = new FormData();
-  const unmappedSource = fixture("sample-docs/unmapped-ledger.csv");
-  unmappedForm.append("files", new File([fs.readFileSync(unmappedSource)], path.basename(unmappedSource), { type: "text/csv" }));
+  unmappedForm.append("files", new File([unmappedLedger], "unmapped-ledger.csv", { type: "text/csv" }));
   const unmappedUploadResponse = await fetch(`${base}/documents/upload`, { method: "POST", headers: { cookie }, body: unmappedForm });
   assert.equal(unmappedUploadResponse.status, 201);
   const unmappedUpload = await unmappedUploadResponse.json();

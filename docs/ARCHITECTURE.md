@@ -39,6 +39,8 @@ The reconciliation service always requires GSTR-1 and GSTR-3B. The Home UI cross
 
 Home (`/home`) owns document upload, selection, mapping, preview, and starting a reconciliation. Reconciliation history (`/reconciliations`) groups the authenticated user's stored results by client GSTIN and return-period year. When a client month has been reconciled more than once, the newest saved result is shown for that monthly tab. A month is categorized only when its result documents belong to the reconciliation's authoritative selection and at least one of its GSTR-1/GSTR-3B documents identifies one consistent client GSTIN; selected returns with a missing GSTIN remain visible as resolvable exceptions. Legacy `/workspace` links redirect to the corresponding Home route.
 
+The history report can be exported to the provided `GST_Reconciliation.xlsx` workbook format. The authenticated server selects the same newest monthly results for the requested client/year, recalculates the GSTR-1 B2B/B2C/note split and sales-register controls from current parsed documents, and replaces only the numeric cells in the template's `Taxable Value` and `Output Tax` worksheets. The bundled template remains unchanged.
+
 ## Security model
 
 - Passwords use Node's `scrypt` with a per-password random salt.

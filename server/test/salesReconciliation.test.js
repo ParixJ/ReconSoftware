@@ -14,9 +14,13 @@ process.env.GST_UPLOAD_DIR = path.join(testRoot, "uploads");
 const { getDb, closeDb } = await import("../src/db/database.js");
 const { parseGstr1Text } = await import("../src/parsers/gstr1.js");
 const { parseGstr3bText } = await import("../src/parsers/gstr3b.js");
+const { normalizeJson } = await import("../src/parsers/normalizers.js");
 const { parseSalesRegisterMatrix } = await import("../src/parsers/salesRegister.js");
 const { updateMapping } = await import("../src/services/documentService.js");
+const { exportReconciliationWorkbook } = await import("../src/services/reconciliationExportService.js");
 const { getReconciliation, listReconciliations, runReconciliation } = await import("../src/services/reconciliationService.js");
+const { strFromU8, unzipSync } = await import("fflate");
+const { readSheet } = await import("read-excel-file/node");
 
 function insertDocument(userId, originalName, fileType, parsed) {
   const id = crypto.randomUUID();
@@ -32,6 +36,12 @@ function insertDocument(userId, originalName, fileType, parsed) {
     JSON.stringify(parsed.anomalies), new Date().toISOString(),
   );
   return id;
+}
+
+function workbookCell(xml, cell) {
+  const match = xml.match(new RegExp(`<c\\s+r="${cell}"[^>]*>\\s*<v>([^<]*)<\\/v>`));
+  assert.ok(match, `Expected workbook cell ${cell}`);
+  return Number(match[1]);
 }
 
 test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", async () => {
@@ -79,6 +89,63 @@ test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", as
   assert.ok(booksChecks.every((item) => item.status === "matched"));
   assert.equal(booksChecks[0].sourceLabel, "Sales register");
   assert.equal(booksChecks[0].filedLabel, "GSTR-1");
+
+  const workbook = await exportReconciliationWorkbook(userId, { clientGstin: "29AABFB5678G1Z8", year: "2025" });
+  const files = unzipSync(new Uint8Array(workbook.buffer));
+  const workbookXml = strFromU8(files["xl/workbook.xml"]);
+  const taxableXml = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const outputTaxXml = strFromU8(files["xl/worksheets/sheet2.xml"]);
+  assert.equal(workbook.filename, "GST_Reconciliation_29AABFB5678G1Z8_2025.xlsx");
+  assert.match(workbookXml, /name="Taxable Value"/);
+  assert.match(workbookXml, /name="Output Tax"/);
+  assert.match(taxableXml, /mergeCell ref="B1:E1"/);
+  assert.match(outputTaxXml, /mergeCell ref="J1:M1"/);
+  assert.deepEqual(["B3", "C3", "D3", "E3", "F3", "G3", "H3", "I3", "J3", "K3", "L3", "M3", "N3"].map((cell) => workbookCell(taxableXml, cell)), [860000, 0, 0, 860000, 860000, 860000, 860000, 0, 0, 860000, 1014800, 0, 0]);
+  assert.deepEqual(["B3", "C3", "D3", "E3", "F3", "G3", "H3", "I3", "J3", "K3", "L3", "M3", "N3", "O3"].map((cell) => workbookCell(outputTaxXml, cell)), [45000, 54900, 54900, 154800, 45000, 54900, 54900, 154800, 45000, 54900, 54900, 154800, 0, 0]);
+  assert.equal(workbookCell(taxableXml, "E15"), 860000);
+  assert.equal(workbookCell(outputTaxXml, "E15"), 154800);
+  const taxableSheet = await readSheet(workbook.buffer, "Taxable Value");
+  const outputTaxSheet = await readSheet(workbook.buffer, "Output Tax");
+  assert.deepEqual(taxableSheet[2].slice(0, 14), ["April", 860000, 0, 0, 860000, 860000, 860000, 860000, 0, 0, 860000, 1014800, 0, 0]);
+  assert.deepEqual(outputTaxSheet[2].slice(0, 15), ["April", 45000, 54900, 54900, 154800, 45000, 54900, 54900, 154800, 45000, 54900, 54900, 154800, 0, 0]);
+});
+
+test("exports the template's GSTR-1 credit-note and books columns with the expected signs", async () => {
+  const userId = crypto.randomUUID();
+  const gstin = "29AABFB5678G1Z8";
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "excel-notes@example.test", "Excel Auditor", "test-only", new Date().toISOString());
+  const gstr1 = normalizeJson({
+    gstin,
+    fp: "052025",
+    b2b: [{ ctin: "27AABCM1234F1ZX", inv: [{ inum: "B2B-1", idt: "01-05-2025", val: 1960437, itms: [{ itm_det: { txval: 1609174, iamt: 76821.3, camt: 106976.76, samt: 106976.76 } }] }] }],
+    b2cs: [{ pos: "29", txval: 27250 }],
+    cdnr: [{ ctin: "27AABCM1234F1ZX", nt: [{ nt_num: "CN-1", nt_dt: "20-05-2025", ntty: "C", txval: 20900 }] }],
+  }, "gstr1-may-2025.json");
+  const gstr3b = normalizeJson({
+    gstin,
+    ret_period: "052025",
+    sup_details: { osup_det: { txval: 1615524, iamt: 76821.3, camt: 106976.76, samt: 106976.76 } },
+  }, "gstr3b-may-2025.json");
+  const books = parseSalesRegisterMatrix([
+    ["DEMO COMPANY", `GSTIN ${gstin}`],
+    ["Bill Date", "Bill No", "Party Name", "Party GSTIN No", "Assessable Amount", "Integrated Tax-18.00%", "Central Tax-9.00%", "State/UT Tax-9.00%", "Bill Amount"],
+    ["01/05/2025", "B2B-1", "Registered buyer", "27AABCM1234F1ZX", 1609174, 76821.3, 111105.96, 111105.96, 1960437],
+    ["02/05/2025", "B2C-1", "Consumer", "", 27250, 0, 0, 0, 27250],
+  ], "sales-register-may.xlsx");
+  const documentIds = [
+    insertDocument(userId, "sales-register-may.xlsx", "xlsx", books),
+    insertDocument(userId, "gstr1-may-2025.json", "json", gstr1),
+    insertDocument(userId, "gstr3b-may-2025.json", "json", gstr3b),
+  ];
+  await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
+
+  const workbook = await exportReconciliationWorkbook(userId, { clientGstin: gstin, year: "2025" });
+  const files = unzipSync(new Uint8Array(workbook.buffer));
+  const taxableXml = strFromU8(files["xl/worksheets/sheet1.xml"]);
+  const outputTaxXml = strFromU8(files["xl/worksheets/sheet2.xml"]);
+  assert.deepEqual(["B4", "C4", "D4", "E4", "F4", "G4", "H4", "I4", "J4", "K4", "L4", "M4", "N4"].map((cell) => workbookCell(taxableXml, cell)), [1609174, 27250, 20900, 1615524, 1615524, 1615524, 1609174, 27250, 0, 1636424, 1960437, 0, 20900]);
+  assert.deepEqual(["B4", "C4", "D4", "E4", "F4", "G4", "H4", "I4", "J4", "K4", "L4", "M4", "N4", "O4"].map((cell) => workbookCell(outputTaxXml, cell)), [76821.3, 106976.76, 106976.76, 290774.82, 76821.3, 106976.76, 106976.76, 290774.82, 76821.3, 111105.96, 111105.96, 299033.22, 0, 8258.4]);
 });
 
 test("removes a resolved GSTIN exception from reconciliation GET results", async () => {

@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { AlertOctagon, ArrowDownRight, ArrowUpRight, CalendarRange, CheckCircle2, ClipboardCheck, Lightbulb, Scale } from "lucide-react";
+import { AlertOctagon, ArrowDownRight, ArrowUpRight, CalendarRange, CheckCircle2, ClipboardCheck, Download, Lightbulb, Scale } from "lucide-react";
+import { errorMessage, reconciliationApi } from "../api/client.js";
 import { money, period, TYPE_LABELS } from "../utils/format.js";
+import Notice from "./Notice.jsx";
 
 function Metric({ label, value, detail, tone = "neutral" }) {
   return <div className={`metric-card metric-${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
@@ -63,20 +65,56 @@ function PeriodTabs({ periods, onModifyMapping }) {
 }
 
 export default function ReconciliationResults({ reconciliation, onModifyMapping }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   if (!reconciliation) return (
     <section className="panel results-empty" id="results"><ClipboardCheck size={30} /><div><h2>No reconciliation run yet</h2><p>Select GSTR-1 and GSTR-3B files, then run the comparison. A sales register adds books checks; GSTR-2B adds ITC checks.</p></div></section>
   );
   const { result } = reconciliation;
   const review = reconciliation.status === "needs_review";
   const resultPeriods = result.periods?.length ? result.periods : [{ ...result, status: reconciliation.status }];
+  const resultYears = [...new Set(resultPeriods.map((item) => item.returnPeriod?.slice(2)).filter((year) => /^\d{4}$/.test(year || "")))];
+  const exportYear = resultYears.length === 1 ? resultYears[0] : null;
+  const canExport = Boolean(result.clientGstin && exportYear);
   const knownPeriodCount = resultPeriods.filter((item) => item.returnPeriod).length;
   const headingPeriod = knownPeriodCount > 1 ? `${knownPeriodCount} return periods` : period(resultPeriods[0]?.returnPeriod || result.returnPeriod);
+  const exportToExcel = async () => {
+    setExporting(true);
+    setExportError("");
+    try {
+      const response = await reconciliationApi.exportWorkbook(result.clientGstin, exportYear);
+      const disposition = response.headers["content-disposition"] || "";
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `GST_Reconciliation_${result.clientGstin}_${exportYear}.xlsx`;
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (requestError) {
+      let message = errorMessage(requestError, "The Excel reconciliation could not be generated.");
+      if (requestError.response?.data instanceof Blob) {
+        try {
+          const payload = JSON.parse(await requestError.response.data.text());
+          message = payload.error?.message || message;
+        } catch {
+          // The server did not return its standard JSON error body.
+        }
+      }
+      setExportError(message);
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <section className="results-section" id="results" aria-labelledby="results-heading">
       <div className="results-title-row">
         <div><p className="eyebrow">Reconciliation report</p><h2 id="results-heading">{headingPeriod} · <span className="mono">{result.clientGstin || "GSTIN not detected"}</span></h2><p>{result.methodology}</p></div>
-        <span className={`report-status ${review ? "report-review" : "report-matched"}`}>{review ? <AlertOctagon size={16} /> : <CheckCircle2 size={16} />}{review ? "Review required" : "Matched"}</span>
+        <div className="results-actions"><span className={`report-status ${review ? "report-review" : "report-matched"}`}>{review ? <AlertOctagon size={16} /> : <CheckCircle2 size={16} />}{review ? "Review required" : "Matched"}</span><button className="button button-secondary export-button" onClick={exportToExcel} disabled={!canExport || exporting}>{exporting ? <span className="spinner" /> : <Download size={16} />}{exporting ? "Preparing Excel…" : "Export to Excel"}</button></div>
       </div>
+      {exportError ? <Notice tone="danger" title="Excel export failed" onClose={() => setExportError("")}>{exportError}</Notice> : null}
       <div className="metric-grid">
         <Metric label="Checks matched" value={`${result.summary.matched} / ${result.summary.totalChecks}`} detail="Across all selected periods" tone="success" />
         <Metric label="Value differences" value={result.summary.mismatched} detail={money(result.summary.totalAbsoluteDifference)} tone={result.summary.mismatched ? "warning" : "success"} />

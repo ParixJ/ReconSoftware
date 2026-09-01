@@ -1,8 +1,33 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { strFromU8, unzipSync } from "fflate";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const sampleGstr1 = {
+  gstin: "24AEXPS3034H1Z6",
+  fp: "032026",
+  b2b: [{ ctin: "24AAAAA0000A1Z5", inv: [{ inum: "INV-1001", idt: "05-03-2026", val: 118000, pos: "24", rchrg: "N", itms: [{ itm_det: { txval: 100000, camt: 9000, samt: 9000, iamt: 0, csamt: 0 } }] }] }],
+  b2cs: [{ pos: "27", txval: 25000, iamt: 4500, camt: 0, samt: 0, csamt: 0 }],
+  exp: [{ inv: [{ inum: "EXP-2001", idt: "14-03-2026", val: 50000, itms: [{ itm_det: { txval: 50000, iamt: 0, csamt: 0 } }] }] }],
+  cdnr: [{ ctin: "24AAAAA0000A1Z5", nt: [{ ntty: "C", nt_num: "CN-1", nt_dt: "20-03-2026", val: 11800, itms: [{ itm_det: { txval: 10000, camt: 900, samt: 900, iamt: 0, csamt: 0 } }] }] }],
+  nil: { inv: [{ nil_amt: 6000, expt_amt: 4000, ngsup_amt: 5000 }] },
+};
+const sampleGstr3b = {
+  gstin: "24AEXPS3034H1Z6",
+  ret_period: "032026",
+  sup_details: {
+    osup_det: { txval: 114500, iamt: 4500, camt: 8055, samt: 8055, csamt: 0 },
+    osup_zero: { txval: 50000, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+    osup_nil_exmp: { txval: 10000, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+    isup_rev: { txval: 11640, iamt: 0, camt: 291, samt: 291, csamt: 0 },
+    osup_nongst: { txval: 5000, iamt: 0, camt: 0, samt: 0, csamt: 0 },
+  },
+  inter_sup: { unreg_details: [{ pos: "27", txval: 25000, iamt: 4500 }] },
+  itc_elg: { itc_avl: [{ ty: "OTH", iamt: 131323.25, camt: 112804.54, samt: 112804.54, csamt: 0 }] },
+};
+const unmappedLedger = "Ledger Ref,Party Label,Net Figure,Tax Figure\nL-1001,Northwind Components,125000,22500\nL-1002,Contoso Industrial,84000,15120\n";
 process.env.NODE_ENV = "test";
 process.env.GST_DATA_DIR = path.join(root, "server/data/e2e-data");
 process.env.GST_DATABASE_PATH = path.join(root, "server/data/e2e-data/gst-e2e.sqlite");
@@ -10,6 +35,11 @@ process.env.GST_UPLOAD_DIR = path.join(root, "server/data/e2e-data/uploads");
 
 let apiServer;
 let closeDatabase;
+
+function workbookCell(xml, cell) {
+  const match = xml.match(new RegExp(`<c\\s+r="${cell}"[^>]*>\\s*<v>([^<]*)<\\/v>`));
+  return match ? Number(match[1]) : null;
+}
 
 test.beforeAll(async () => {
   const [{ createApp }, { closeDb }] = await Promise.all([
@@ -70,9 +100,9 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles([
-    path.join(root, "sample-docs/gstr1-march-2026.json"),
-    path.join(root, "sample-docs/gstr3b-march-2026.json"),
-    path.join(root, "docs/returns_R2B_24AEXPS3034H1Z6_032026.json"),
+    { name: "gstr1-march-2026.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(sampleGstr1)) },
+    { name: "gstr3b-march-2026.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(sampleGstr3b)) },
+    { name: "returns_R2B_24AEXPS3034H1Z6_032026.json", mimeType: "application/json", buffer: fs.readFileSync(path.join(root, "docs/returns_R2B_24AEXPS3034H1Z6_032026.json")) },
   ]);
   await expect(page.getByText("3 documents ready")).toBeVisible();
   await expect(page.getByRole("cell", { name: "GSTR-1", exact: true })).toBeVisible();
@@ -197,6 +227,22 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await expect(yearSelect).toHaveValue("2026");
   await expect(page).toHaveURL(new RegExp(`/reconciliations\\?gstin=${gstin}&year=2026`));
   await expect(page.getByRole("heading", { name: /Apr 2026/ })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export to Excel" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(`GST_Reconciliation_${gstin}_2026.xlsx`);
+  const workbookFiles = unzipSync(new Uint8Array(fs.readFileSync(await download.path())));
+  const workbookXml = strFromU8(workbookFiles["xl/workbook.xml"]);
+  const taxableXml = strFromU8(workbookFiles["xl/worksheets/sheet1.xml"]);
+  const outputTaxXml = strFromU8(workbookFiles["xl/worksheets/sheet2.xml"]);
+  expect(workbookXml).toContain('name="Taxable Value"');
+  expect(workbookXml).toContain('name="Output Tax"');
+  expect(workbookCell(taxableXml, "B3")).toBe(3000);
+  expect(workbookCell(taxableXml, "E3")).toBe(3000);
+  expect(workbookCell(taxableXml, "G3")).toBe(3000);
+  expect(workbookCell(outputTaxXml, "E3")).toBe(540);
+  expect(workbookCell(outputTaxXml, "I3")).toBe(540);
 });
 
 test("auditor cannot reconcile documents belonging to different client GSTINs", async ({ page }) => {
@@ -255,7 +301,7 @@ test("auditor decides whether incomplete source fields should be rendered as ext
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
 
-  await page.locator('input[type="file"]').setInputFiles(path.join(root, "sample-docs/unmapped-ledger.csv"));
+  await page.locator('input[type="file"]').setInputFiles({ name: "unmapped-ledger.csv", mimeType: "text/csv", buffer: Buffer.from(unmappedLedger) });
   const tabPanel = page.getByRole("tabpanel");
   await expect(tabPanel.getByRole("heading", { name: "Expected reconciliation fields were not mapped" })).toBeVisible();
   await expect(tabPanel.getByText("Ledger Ref", { exact: true })).toBeVisible();
