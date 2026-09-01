@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildYearReconciliation, indexReconciliationHistory } from "../src/utils/reconciliationHistory.js";
+import { buildYearReconciliation, clientGstinSearchTarget, indexReconciliationHistory, matchingClientGstins } from "../src/utils/reconciliationHistory.js";
 
 function periodResult(returnPeriod, clientGstin, matched, mismatched = 0) {
   return {
@@ -79,4 +79,14 @@ test("does not categorize months backed by unselected returns or without an iden
   ]);
 
   assert.deepEqual(history[gstin]["2025"].map((item) => item.returnPeriod), ["052025", "062025"]);
+});
+
+test("finds a client from complete or partial GSTIN search text", () => {
+  const gstins = ["24AAAAA0000A1Z5", "24AEXPS3034H1Z6", "29AABFB5678G1Z8"];
+
+  assert.deepEqual(matchingClientGstins(gstins, "aexps3034"), ["24AEXPS3034H1Z6"]);
+  assert.equal(clientGstinSearchTarget(gstins, "24aexps3034h1z6"), "24AEXPS3034H1Z6");
+  assert.equal(clientGstinSearchTarget(gstins, "AEXPS3034"), "24AEXPS3034H1Z6");
+  assert.equal(clientGstinSearchTarget(gstins, "not-found"), null);
+  assert.equal(clientGstinSearchTarget(gstins, ""), null);
 });

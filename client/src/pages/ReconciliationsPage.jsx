@@ -5,7 +5,7 @@ import { errorMessage, reconciliationApi } from "../api/client.js";
 import Notice from "../components/Notice.jsx";
 import ReconciliationResults from "../components/ReconciliationResults.jsx";
 import TopNav from "../components/TopNav.jsx";
-import { buildYearReconciliation, indexReconciliationHistory } from "../utils/reconciliationHistory.js";
+import { buildYearReconciliation, clientGstinSearchTarget, indexReconciliationHistory, matchingClientGstins } from "../utils/reconciliationHistory.js";
 
 export default function ReconciliationsPage() {
   const navigate = useNavigate();
@@ -30,7 +30,7 @@ export default function ReconciliationsPage() {
   const clientGstins = useMemo(() => Object.keys(history).sort(), [history]);
   const yearOptions = useMemo(() => Object.keys(history[selectedGstin] || {}).sort((left, right) => right.localeCompare(left)), [history, selectedGstin]);
   const visibleGstins = useMemo(() => {
-    const matching = clientGstins.filter((gstin) => gstin.includes(gstinSearch.trim().toUpperCase()));
+    const matching = matchingClientGstins(clientGstins, gstinSearch);
     if (selectedGstin && clientGstins.includes(selectedGstin) && !matching.includes(selectedGstin)) matching.unshift(selectedGstin);
     return matching;
   }, [clientGstins, gstinSearch, selectedGstin]);
@@ -62,10 +62,16 @@ export default function ReconciliationsPage() {
     history[selectedGstin]?.[selectedYear],
   ), [history, selectedGstin, selectedYear]);
 
-  const selectClient = (event) => {
-    const gstin = event.target.value;
+  const chooseClient = (gstin) => {
     setSelectedGstin(gstin);
     setSelectedYear(Object.keys(history[gstin] || {}).sort((left, right) => right.localeCompare(left))[0] || "");
+  };
+
+  const selectClient = (event) => chooseClient(event.target.value);
+
+  const submitGstinSearch = (event) => {
+    event.preventDefault();
+    chooseClient(clientGstinSearchTarget(clientGstins, gstinSearch) || "");
   };
 
   return (
@@ -87,9 +93,12 @@ export default function ReconciliationsPage() {
         {!loading && !error && reconciliations.length && clientGstins.length ? (
           <>
             <section className="panel history-filter-panel" aria-labelledby="history-filter-heading">
-              <div className="section-heading compact-heading"><div><h2 id="history-filter-heading">Find client reports</h2><p>Search the available GSTINs, select a client, then choose the return year.</p></div><span className="count-badge">{clientGstins.length} client{clientGstins.length === 1 ? "" : "s"}</span></div>
+              <div className="section-heading compact-heading"><div><h2 id="history-filter-heading">Find client reports</h2><p>Enter a complete or partial GSTIN and press Enter or Search, then choose the return year.</p></div><span className="count-badge">{clientGstins.length} client{clientGstins.length === 1 ? "" : "s"}</span></div>
               <div className="history-filter-row">
-                <label className="field history-search-field"><span>Search GSTIN</span><span className="history-search-input"><Search size={16} /><input value={gstinSearch} onChange={(event) => setGstinSearch(event.target.value)} placeholder="24ABCDE1234F1Z5" maxLength={15} autoComplete="off" /></span></label>
+                <form className="field history-search-field" onSubmit={submitGstinSearch} role="search">
+                  <label htmlFor="history-gstin-search">Search GSTIN</label>
+                  <span className="history-search-input"><Search size={16} /><input id="history-gstin-search" value={gstinSearch} onChange={(event) => setGstinSearch(event.target.value)} placeholder="24ABCDE1234F1Z5" maxLength={15} autoComplete="off" /><button className="history-search-submit" type="submit">Search</button></span>
+                </form>
                 <label className="field history-client-field"><span>Client GSTIN</span><select value={selectedGstin} onChange={selectClient}><option value="">{visibleGstins.length ? "Select client GSTIN" : "No matching GSTINs"}</option>{visibleGstins.map((gstin) => <option key={gstin} value={gstin}>{gstin}</option>)}</select></label>
                 <label className="field history-year-field"><span>Return year</span><select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value)} disabled={!selectedGstin}><option value="">Select year</option>{yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}</select></label>
               </div>

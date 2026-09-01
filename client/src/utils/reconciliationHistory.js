@@ -5,6 +5,18 @@ function normalizeGstin(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+export function matchingClientGstins(clientGstins, query) {
+  const normalizedQuery = normalizeGstin(query);
+  return [...(clientGstins || [])].filter((gstin) => normalizeGstin(gstin).includes(normalizedQuery));
+}
+
+export function clientGstinSearchTarget(clientGstins, query) {
+  const normalizedQuery = normalizeGstin(query);
+  if (!normalizedQuery) return null;
+  const matches = matchingClientGstins(clientGstins, normalizedQuery);
+  return matches.find((gstin) => normalizeGstin(gstin) === normalizedQuery) || matches[0] || null;
+}
+
 function periodsFor(reconciliation) {
   const result = reconciliation?.result || {};
   if (Array.isArray(result.periods) && result.periods.length) return result.periods;

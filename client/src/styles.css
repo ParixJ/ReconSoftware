@@ -368,8 +368,10 @@ tbody tr:hover td { background: var(--surface-hover); }
 .history-filter-row { display: grid; grid-template-columns: 280px minmax(300px,1fr) 180px; align-items: end; gap: 16px; padding: 3px 20px 0; }
 .history-search-input { height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 11px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; }
 .history-search-input:focus-within { outline: 2px solid color-mix(in srgb, var(--focus) 32%, transparent); border-color: var(--focus); }
-.history-search-input input { min-width: 0; height: 38px; padding: 0; background: transparent; border: 0; outline: 0; }
+.history-search-input input { min-width: 0; height: 38px; flex: 1; padding: 0; background: transparent; border: 0; outline: 0; }
 .history-search-input input:focus { outline: 0; }
+.history-search-submit { align-self: stretch; margin: 4px -7px 4px 0; padding: 0 9px; color: var(--accent); background: var(--accent-subtle); border: 0; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.history-search-submit:hover { color: var(--accent-hover); }
 .history-year-field select:disabled { color: var(--text-disabled); background: var(--surface-subtle); }
 .history-empty, .history-prompt { min-height: 190px; }
 .results-section { display: grid; gap: 16px; padding-top: 8px; scroll-margin-top: 82px; }

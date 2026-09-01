@@ -192,8 +192,11 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await gstinSelect.selectOption("");
   await gstinSearch.fill("AEXPS3034");
   await expect(gstinSelect.locator("option")).toHaveText(["Select client GSTIN", gstin]);
-  await gstinSelect.selectOption(gstin);
+  await gstinSearch.press("Enter");
+  await expect(gstinSelect).toHaveValue(gstin);
   await expect(yearSelect).toHaveValue("2026");
+  await expect(page).toHaveURL(new RegExp(`/reconciliations\\?gstin=${gstin}&year=2026`));
+  await expect(page.getByRole("heading", { name: /Apr 2026/ })).toBeVisible();
 });
 
 test("auditor cannot reconcile documents belonging to different client GSTINs", async ({ page }) => {
