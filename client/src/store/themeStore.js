@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const THEME_STORAGE_KEY = "gst-reconciliation-theme";
+const THEME_STORAGE_KEY = "reconsoft-theme";
 const THEMES = new Set(["light", "dark"]);
 
 function getInitialTheme() {

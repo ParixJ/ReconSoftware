@@ -114,7 +114,6 @@ export default function ReconciliationsPage() {
           <section className="panel results-empty history-empty"><ClipboardCheck size={30} /><div><h2>No categorized reconciliations</h2><p>The saved reconciliations do not contain a client GSTIN and valid return period.</p></div></section>
         ) : null}
       </main>
-      <footer className="workspace-footer"><span>Reconcile GST</span><span>Audit support only · Source returns are never modified</span></footer>
     </div>
   );
 }

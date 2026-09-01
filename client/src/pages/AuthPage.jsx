@@ -32,7 +32,7 @@ export default function AuthPage() {
         <form className="auth-card" onSubmit={submit}>
           <div className="auth-card-heading">
             <p className="eyebrow">Secure workspace</p>
-            <h2>{mode === "login" ? "Sign in to continue" : "Create auditor account"}</h2>
+            <h2>{mode === "login" ? "Sign in to ReconSoft" : "Create ReconSoft account"}</h2>
             <p>{mode === "login" ? "Resume document review and prior reconciliations." : "Your documents and reports are isolated to this account."}</p>
           </div>
           {error ? <Notice tone="danger" title="Could not sign in">{error}</Notice> : null}
@@ -46,7 +46,7 @@ export default function AuthPage() {
             {mode === "login" ? "Sign in" : "Create account"}<ArrowRight size={17} />
           </button>
           <div className="auth-switch">
-            <span>{mode === "login" ? "New to Reconcile GST?" : "Already have an account?"}</span>
+            <span>{mode === "login" ? "New to ReconSoft?" : "Already have an account?"}</span>
             <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
               {mode === "login" ? "Create account" : "Sign in"}
             </button>

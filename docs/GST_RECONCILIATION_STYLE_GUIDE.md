@@ -1,4 +1,4 @@
-# GST Reconciliation Software — UI Style Guide
+# ReconSoft — UI Style Guide
 
 ## 1. Visual Direction
 
@@ -133,7 +133,7 @@ Use shadows only for menus, dialogs, and overlapping surfaces.
 Use a horizontal navbar only.
 
 ```text
-GST Reconciliation   Overview   Reconciliations   Exceptions   Reports   Settings
+ReconSoft   Home   Documents   Reconciliations
 
                                                   Organisation ▾   Search   User ▾
 ```

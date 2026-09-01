@@ -5,7 +5,7 @@ import DocumentRenderGate from "./DocumentRenderGate.jsx";
 export default function DocumentTabs({ selectedDocuments, activeId, onActive, onRemove, onMap, onViewDecision, decisionSaving, detail, loading }) {
   return (
     <section className="panel viewer-panel" aria-labelledby="viewer-heading">
-      <div className="section-heading viewer-heading"><div><p className="eyebrow">Document browser</p><h2 id="viewer-heading">Return document data</h2><p>Mapped returns use the fixed audit schema; incomplete mappings require a rendering choice.</p></div></div>
+      <div className="section-heading viewer-heading"><div><p className="eyebrow">Document browser</p><h2 id="viewer-heading">Return document data</h2></div></div>
       {!selectedDocuments.length ? (
         <div className="empty-state viewer-empty"><FileSearch size={28} /><strong>Select documents to inspect</strong><p>The selected returns will open here as browser-style tabs.</p></div>
       ) : (

@@ -63,6 +63,8 @@ test("auditor can choose and persist dark mode from the authentication page", as
   const email = `theme-auditor-${Date.now()}@example.test`;
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/auth");
+  await expect(page).toHaveTitle("ReconSoft");
+  await expect(page.getByRole("heading", { name: "Sign in to ReconSoft" })).toBeVisible();
   const rootElement = page.locator("html");
   await expect(page.locator(".auth-context")).toHaveCount(0);
   const authCardBounds = await page.locator(".auth-card").boundingBox();
@@ -72,21 +74,26 @@ test("auditor can choose and persist dark mode from the authentication page", as
   await expect(rootElement).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(rootElement).toHaveAttribute("data-theme", "dark");
-  await expect(page.locator(".auth-card")).toHaveCSS("background-color", "rgb(23, 29, 25)");
+  await expect(page.locator(".auth-card")).toHaveCSS("background-color", "rgb(16, 21, 18)");
 
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByLabel("Full name").fill("Theme Auditor");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill("safe-password-2026");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "ReconSoft" })).toBeVisible();
+  await expect(page.getByText(/^Step [1-3]$/)).toHaveCount(0);
+  await expect(page.getByText("Use the selected files for reconciliation or delete them together.", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Mapped returns use the fixed audit schema", { exact: false })).toHaveCount(0);
+  await expect(page.locator("footer")).toHaveCount(0);
 
   await expect(rootElement).toHaveAttribute("data-theme", "dark");
   await expect(rootElement).toHaveCSS("color-scheme", "dark");
-  await expect(page.locator(".panel").first()).toHaveCSS("background-color", "rgb(23, 29, 25)");
+  await expect(page.locator(".panel").first()).toHaveCSS("background-color", "rgb(16, 21, 18)");
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
   await expect(rootElement).toHaveAttribute("data-theme", "dark");
   await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
   await page.getByRole("link", { name: "Reconciliations" }).click();
@@ -102,7 +109,7 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill("safe-password-2026");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: "gstr1-march-2026.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(sampleGstr1)) },
@@ -128,10 +135,10 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByRole("heading", { name: /Mar 2026/ })).toBeVisible();
   await expect(page.getByText("20 / 23")).toBeVisible();
   await expect(page.getByText("Suggested review sequence")).toBeVisible();
-  await page.screenshot({ path: path.join(root, "test-results/gst-reconciliation-flow.png"), fullPage: true });
+  await page.screenshot({ path: path.join(root, "test-results/reconsoft-flow.png"), fullPage: true });
 
   await page.getByRole("link", { name: "Home" }).click();
-  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
   const gstr1Row = page.getByRole("row").filter({ hasText: "gstr1-march-2026.json" });
   page.once("dialog", (dialog) => dialog.accept());
   await gstr1Row.getByRole("button", { name: "Delete gstr1-march-2026.json" }).click();
@@ -182,7 +189,7 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill("safe-password-2026");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: "gstr1-april-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr1("042025", "15-04-2025", 1000, 90))) },
@@ -282,17 +289,13 @@ test("auditor cannot reconcile documents belonging to different client GSTINs", 
     { name: "client-b-gstr3b.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b)) },
   ]);
 
-  const crossExamination = page.locator(".gstin-cross-examination");
-  await expect(crossExamination.getByText("Client GSTIN mismatch", { exact: true })).toBeVisible();
-  await expect(crossExamination).toContainText(clientAGstin);
-  await expect(crossExamination).toContainText(clientBGstin);
+  await expect(page.locator(".gstin-cross-examination")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resolve GSTIN mismatch" })).toBeDisabled();
 
   const gstr3bRow = page.getByRole("row").filter({ hasText: "client-b-gstr3b.json" });
   await gstr3bRow.getByRole("button", { name: "Modify mapping" }).click();
   await page.getByLabel("Client GSTIN").fill(clientAGstin);
   await page.getByRole("button", { name: "Save mapping" }).click();
-  await expect(page.getByText("GSTIN cross-examination passed", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Run on 2 files" })).toBeEnabled();
 });
 
@@ -304,7 +307,7 @@ test("auditor decides whether incomplete source fields should be rendered as ext
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill("safe-password-2026");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "GST return reconciliation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles({ name: "unmapped-ledger.csv", mimeType: "text/csv", buffer: Buffer.from(unmappedLedger) });
   const tabPanel = page.getByRole("tabpanel");

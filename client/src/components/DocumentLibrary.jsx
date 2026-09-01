@@ -18,7 +18,7 @@ export default function DocumentLibrary({ documents, selectedIds, onToggle, onTo
   return (
     <section className="panel document-panel" id="documents" aria-labelledby="documents-heading">
       <div className="section-heading">
-        <div><p className="eyebrow">Step 2</p><h2 id="documents-heading">Select files</h2><p>Use the selected files for reconciliation or delete them together. At least one GSTR-1 and one GSTR-3B are required for reconciliation.</p></div>
+        <div><h2 id="documents-heading">Select files</h2></div>
         <div className="selection-actions">
           <span className="count-badge">{selectedCount} selected</span>
           <button className="button button-secondary button-danger" onClick={onDeleteSelected} disabled={!selectedCount || deleting}>

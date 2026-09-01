@@ -191,7 +191,7 @@ export default function WorkspacePage() {
     <div className="workspace-shell">
       <TopNav />
       <main className="workspace" id="workspace">
-        <header className="page-header"><div><p className="eyebrow">Auditor home</p><h1>GST return reconciliation</h1><p>Upload books and returns, verify extracted fields, then compare outward liability and input tax credit.</p></div><div className="page-context"><small>Review mode</small><strong>GSTR-1 ↔ GSTR-3B</strong><span>Optional sales-register and GSTR-2B checks</span></div></header>
+        <header className="page-header"><div><p className="eyebrow">Auditor home</p><h1>Reconciliation workspace</h1><p>Upload books and returns, verify extracted fields, then compare outward liability and input tax credit.</p></div><div className="page-context"><small>Review mode</small><strong>GSTR-1 ↔ GSTR-3B</strong><span>Optional sales-register and GSTR-2B checks</span></div></header>
         {notice ? <Notice tone={notice.tone} title={notice.title} onClose={() => setNotice(null)}>{notice.message}</Notice> : null}
         {loading ? <div className="panel loading-block"><span className="spinner" />Loading documents…</div> : (
           <>
@@ -202,7 +202,6 @@ export default function WorkspacePage() {
           </>
         )}
       </main>
-      <footer className="workspace-footer"><span>Reconcile GST</span><span>Audit support only · Source returns are never modified</span></footer>
     </div>
   );
 }

@@ -11,7 +11,7 @@ export default function TopNav() {
   return (
     <header className="topnav">
       <div className="topnav-inner">
-        <Link className="brand brand-small" to="/home"><span className="brand-mark"><Scale size={18} /></span><span>Reconcile GST</span></Link>
+        <Link className="brand brand-small" to="/home"><span className="brand-mark"><Scale size={18} /></span><span>ReconSoft</span></Link>
         <nav aria-label="Primary navigation">
           <Link to="/home" className={onHome && location.hash !== "#documents" ? "nav-active" : ""} aria-current={onHome && location.hash !== "#documents" ? "page" : undefined}>Home</Link>
           <Link to="/home#documents" className={onHome && location.hash === "#documents" ? "nav-active" : ""} aria-current={onHome && location.hash === "#documents" ? "page" : undefined}>Documents</Link>

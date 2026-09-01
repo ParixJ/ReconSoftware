@@ -1,6 +1,6 @@
-# GST Reconciliation
+# ReconSoft
 
-A focused auditor workspace for ingesting GST returns and sales registers, reviewing normalized document data, correcting field mappings, and reconciling books with GSTR-1 and GSTR-3B (plus GSTR-2B ITC checks when selected).
+ReconSoft is a focused auditor workspace for ingesting GST returns and sales registers, reviewing normalized document data, correcting field mappings, and reconciling books with GSTR-1 and GSTR-3B (plus GSTR-2B ITC checks when selected).
 
 ## Run locally
 
