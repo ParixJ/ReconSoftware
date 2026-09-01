@@ -91,6 +91,15 @@ test("auditor can choose and persist dark mode from the authentication page", as
   await expect(rootElement).toHaveAttribute("data-theme", "dark");
   await expect(rootElement).toHaveCSS("color-scheme", "dark");
   await expect(page.locator(".panel").first()).toHaveCSS("background-color", "rgb(16, 21, 18)");
+  await expect(page.locator(".panel").first()).toHaveCSS("border-top-width", "0px");
+  await expect(page.locator("body")).toHaveCSS("font-family", "Arial, sans-serif");
+  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toHaveCSS("font-weight", "400");
+  await expect(page.locator(".page-context")).toHaveCount(0);
+  await expect(page.locator(".storage-label")).toHaveCount(0);
+  const boldText = await page.locator("body *").evaluateAll((elements) => elements
+    .filter((element) => element.textContent?.trim() && Number.parseInt(getComputedStyle(element).fontWeight, 10) > 400)
+    .map((element) => element.textContent.trim().slice(0, 80)));
+  expect(boldText).toEqual([]);
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
@@ -120,6 +129,8 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByRole("cell", { name: "GSTR-1", exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: "GSTR-3B", exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: "GSTR-2B", exact: true })).toBeVisible();
+  await expect(page.locator(".type-pill").first()).toHaveCSS("border-radius", "0px");
+  await expect(page.locator(".type-pill").first()).toHaveCSS("font-weight", "400");
 
   await page.getByRole("button", { name: "Modify mapping" }).first().click();
   await expect(page.getByRole("heading", { name: "Return identity" })).toBeVisible();

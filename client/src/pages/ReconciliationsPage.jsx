@@ -80,7 +80,6 @@ export default function ReconciliationsPage() {
       <main className="workspace reconciliation-history-page" id="reconciliations">
         <header className="page-header">
           <div><p className="eyebrow">Reconciliation history</p><h1>Previous reconciliations</h1><p>Choose a client GSTIN and return year to review the latest saved result for each available month.</p></div>
-          <div className="page-context"><small>History view</small><strong>Client GSTIN + year</strong><span>Monthly reports remain separated in tabs</span></div>
         </header>
 
         {error ? <Notice tone="danger" title="History could not load">{error}</Notice> : null}
