@@ -11,6 +11,20 @@ function periodsFor(reconciliation) {
   return result.returnPeriod ? [result] : [];
 }
 
+function clientGstinForPeriod(reconciliation, periodResult) {
+  const documents = Array.isArray(periodResult.documents) ? periodResult.documents : [];
+  const selectedIds = new Set(Array.isArray(reconciliation.documentIds) ? reconciliation.documentIds : []);
+  if (selectedIds.size && documents.some((document) => !document.id || !selectedIds.has(document.id))) return null;
+
+  const gstReturns = documents.filter((document) => ["gstr1", "gstr3b"].includes(document.documentType));
+  if (gstReturns.length) {
+    const distinctGstins = [...new Set(gstReturns.map((document) => normalizeGstin(document.gstin)).filter(Boolean))];
+    return distinctGstins.length === 1 ? distinctGstins[0] : null;
+  }
+
+  return normalizeGstin(periodResult.clientGstin || reconciliation.result?.clientGstin) || null;
+}
+
 export function indexReconciliationHistory(reconciliations) {
   const grouped = new Map();
   const newestFirst = [...(reconciliations || [])].sort((left, right) => (
@@ -20,7 +34,7 @@ export function indexReconciliationHistory(reconciliations) {
   for (const reconciliation of newestFirst) {
     for (const periodResult of periodsFor(reconciliation)) {
       if (!VALID_PERIOD.test(periodResult.returnPeriod || "")) continue;
-      const gstin = normalizeGstin(periodResult.clientGstin || reconciliation.result?.clientGstin);
+      const gstin = clientGstinForPeriod(reconciliation, periodResult);
       if (!gstin) continue;
       const year = periodResult.returnPeriod.slice(2);
       if (!grouped.has(gstin)) grouped.set(gstin, new Map());

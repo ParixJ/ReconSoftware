@@ -37,7 +37,7 @@ For tabular or text sources, the backend also records mapping coverage. If minim
 
 The reconciliation service always requires GSTR-1 and GSTR-3B. A selected sales register adds books-to-GSTR-1 taxable-outward checks for the return period represented by the selected returns; a multi-period register contributes only its matching monthly bucket. GSTR-2B remains optional and adds ITC checks.
 
-Home (`/home`) owns document upload, selection, mapping, preview, and starting a reconciliation. Reconciliation history (`/reconciliations`) groups the authenticated user's stored results by client GSTIN and return-period year. When a client month has been reconciled more than once, the newest saved result is shown for that monthly tab. Legacy `/workspace` links redirect to the corresponding Home route.
+Home (`/home`) owns document upload, selection, mapping, preview, and starting a reconciliation. Reconciliation history (`/reconciliations`) groups the authenticated user's stored results by client GSTIN and return-period year. When a client month has been reconciled more than once, the newest saved result is shown for that monthly tab. A month is categorized only when its result documents belong to the reconciliation's authoritative selection and at least one of its GSTR-1/GSTR-3B documents identifies one consistent client GSTIN; selected returns with a missing GSTIN remain visible as resolvable exceptions. Legacy `/workspace` links redirect to the corresponding Home route.
 
 ## Security model
 

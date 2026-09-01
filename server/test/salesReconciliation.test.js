@@ -267,6 +267,48 @@ test("does not sum duplicate returns within the same month", async () => {
   assert.equal(reconciliation.status, "needs_review");
 });
 
+test("never loads an unselected GSTIN-less return into reconciliation", async () => {
+  const userId = crypto.randomUUID();
+  const gstin = "29AABFB5678G1Z8";
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "selection-isolation@example.test", "Selection Auditor", "test-only", new Date().toISOString());
+  const selectedGstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN ${gstin} Tax period April 2025
+    B2B regular invoices 1 Invoice 1,000.00 0.00 90.00 90.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "selected-gstr1.pdf");
+  const selectedGstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN ${gstin} Period April 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 1,000.00 0.00 90.00 90.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "selected-gstr3b.pdf");
+  const unselectedGstr = parseGstr1Text(`
+    FORM GSTR-1 Tax period April 2025
+    B2B regular invoices 1 Invoice 9,999.00 0.00 899.91 899.91 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "unselected-gstinless-gstr1.pdf");
+  const selectedIds = [
+    insertDocument(userId, "selected-gstr1.pdf", "pdf", selectedGstr1),
+    insertDocument(userId, "selected-gstr3b.pdf", "pdf", selectedGstr3b),
+  ];
+  const unselectedId = insertDocument(userId, "unselected-gstinless-gstr1.pdf", "pdf", unselectedGstr);
+
+  const reconciliation = await runReconciliation(userId, { documentIds: selectedIds, amountTolerance: 1, dateToleranceDays: 0 });
+  const resultDocumentIds = reconciliation.result.documents.map((document) => document.id);
+
+  assert.deepEqual(new Set(reconciliation.documentIds), new Set(selectedIds));
+  assert.deepEqual(new Set(resultDocumentIds), new Set(selectedIds));
+  assert.ok(!resultDocumentIds.includes(unselectedId));
+  assert.ok(!reconciliation.result.exceptions.some((exception) => exception.code === "MISSING_CLIENT_GSTIN"));
+  assert.equal(reconciliation.result.periods.length, 1);
+  assert.equal(reconciliation.result.periods[0].returnPeriod, "042025");
+});
+
 test.after(() => {
   closeDb();
   fs.rmSync(testRoot, { recursive: true, force: true });

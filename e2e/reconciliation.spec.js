@@ -138,6 +138,8 @@ test("auditor reconciles multiple return months in one combined tab per period",
       osup_nongst: { txval: 0, iamt: 0, camt: 0, samt: 0, csamt: 0 },
     },
   });
+  const unselectedGstinlessReturn = gstr1("042025", "20-04-2025", 9999, 899.91);
+  delete unselectedGstinlessReturn.gstin;
 
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create account" }).click();
@@ -152,11 +154,15 @@ test("auditor reconciles multiple return months in one combined tab per period",
     { name: "gstr3b-april-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b("042025", 1000, 90))) },
     { name: "gstr1-may-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr1("052025", "15-05-2025", 2000, 180))) },
     { name: "gstr3b-may-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(gstr3b("052025", 2000, 180))) },
+    { name: "unselected-gstinless-gstr1-april-2025.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(unselectedGstinlessReturn)) },
   ]);
-  await expect(page.getByText("4 documents ready")).toBeVisible();
+  await expect(page.getByText("5 selected", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Select unselected-gstinless-gstr1-april-2025.json" }).click();
+  await expect(page.getByText("4 selected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Run on 4 files" }).click();
 
   await expect(page.getByRole("heading", { name: /2 return periods/ })).toBeVisible();
+  await expect(page.getByText("unselected-gstinless-gstr1-april-2025.json")).toHaveCount(0);
   const aprilTab = page.getByRole("tab", { name: /Apr 2025/ });
   const mayTab = page.getByRole("tab", { name: /May 2025/ });
   await expect(aprilTab).toBeVisible();

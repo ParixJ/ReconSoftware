@@ -103,7 +103,8 @@ export default function WorkspacePage() {
   const run = async () => {
     setRunning(true); setNotice(null);
     try {
-      const { data } = await reconciliationApi.run({ documentIds: selectedIds, amountTolerance: Number(tolerances.amountTolerance), dateToleranceDays: Number(tolerances.dateToleranceDays) });
+      const documentIds = selectedDocuments.map((document) => document.id);
+      const { data } = await reconciliationApi.run({ documentIds, amountTolerance: Number(tolerances.amountTolerance), dateToleranceDays: Number(tolerances.dateToleranceDays) });
       const params = new URLSearchParams();
       const gstin = data.reconciliation.result?.clientGstin;
       const years = (data.reconciliation.result?.periods || [])
@@ -190,7 +191,7 @@ export default function WorkspacePage() {
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
             <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
-            <ReconciliationControls selectedCount={selectedIds.length} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
+            <ReconciliationControls selectedCount={selectedDocuments.length} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
             <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
           </>
         )}

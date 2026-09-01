@@ -7,7 +7,7 @@ function periodResult(returnPeriod, clientGstin, matched, mismatched = 0) {
     returnPeriod,
     clientGstin,
     status: mismatched ? "needs_review" : "matched",
-    documents: [{ id: `${clientGstin}-${returnPeriod}`, originalName: `${returnPeriod}.json`, documentType: "gstr1" }],
+    documents: [{ id: `${clientGstin}-${returnPeriod}`, originalName: `${returnPeriod}.json`, documentType: "gstr1", gstin: clientGstin }],
     summary: { totalChecks: matched + mismatched, matched, mismatched, exceptions: 0, highRisk: mismatched, totalAbsoluteDifference: mismatched * 25 },
     comparisons: [{ id: `${returnPeriod}-comparison`, status: mismatched ? "mismatch" : "matched" }],
     exceptions: [],
@@ -45,4 +45,38 @@ test("builds one year report while preserving monthly tabs and aggregate metrics
   assert.deepEqual(reconciliation.result.summary, { totalChecks: 8, matched: 7, mismatched: 1, exceptions: 0, highRisk: 1, totalAbsoluteDifference: 25 });
   assert.equal(reconciliation.result.clientGstin, gstin);
   assert.equal(reconciliation.createdAt, "2025-06-01T00:00:00.000Z");
+});
+
+test("does not categorize months backed by unselected returns or without an identifiable GST-return client", () => {
+  const gstin = "24AEXPS3034H1Z6";
+  const document = (id, documentType, documentGstin = gstin) => ({ id, documentType, gstin: documentGstin, originalName: `${id}.json` });
+  const result = (returnPeriod, documents) => ({ ...periodResult(returnPeriod, gstin, 4), documents });
+  const history = indexReconciliationHistory([
+    {
+      id: "contains-unselected-return",
+      createdAt: "2025-07-03T00:00:00.000Z",
+      documentIds: ["april-gstr1", "april-gstr3b"],
+      result: { clientGstin: gstin, periods: [result("042025", [document("april-gstr1", "gstr1"), document("april-gstr3b", "gstr3b"), document("unselected-gstr1", "gstr1", null)])] },
+    },
+    {
+      id: "contains-gstinless-selected-return",
+      createdAt: "2025-07-02T00:00:00.000Z",
+      documentIds: ["may-gstr1", "may-gstr3b"],
+      result: { clientGstin: gstin, periods: [result("052025", [document("may-gstr1", "gstr1"), document("may-gstr3b", "gstr3b", null)])] },
+    },
+    {
+      id: "valid-june",
+      createdAt: "2025-07-01T00:00:00.000Z",
+      documentIds: ["june-gstr1", "june-gstr3b"],
+      result: { clientGstin: gstin, periods: [result("062025", [document("june-gstr1", "gstr1"), document("june-gstr3b", "gstr3b")])] },
+    },
+    {
+      id: "all-gst-returns-missing-gstin",
+      createdAt: "2025-07-01T00:00:00.000Z",
+      documentIds: ["july-gstr1", "july-gstr3b", "july-books"],
+      result: { clientGstin: gstin, periods: [result("072025", [document("july-gstr1", "gstr1", null), document("july-gstr3b", "gstr3b", null), document("july-books", "salesRegister")])] },
+    },
+  ]);
+
+  assert.deepEqual(history[gstin]["2025"].map((item) => item.returnPeriod), ["052025", "062025"]);
 });
