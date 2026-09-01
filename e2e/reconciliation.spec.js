@@ -96,6 +96,11 @@ test("auditor can choose and persist dark mode from the authentication page", as
   await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toHaveCSS("font-weight", "400");
   await expect(page.locator(".page-context")).toHaveCount(0);
   await expect(page.locator(".storage-label")).toHaveCount(0);
+  await expect(page.locator(".reconcile-bar")).toHaveCSS("border-top-width", "0px");
+  const sectionWidths = await page.locator(".upload-panel, .document-panel, .viewer-panel").evaluateAll((elements) => (
+    elements.map((element) => Math.round(element.getBoundingClientRect().width))
+  ));
+  expect(new Set(sectionWidths).size).toBe(1);
   const boldText = await page.locator("body *").evaluateAll((elements) => elements
     .filter((element) => element.textContent?.trim() && Number.parseInt(getComputedStyle(element).fontWeight, 10) > 400)
     .map((element) => element.textContent.trim().slice(0, 80)));
@@ -131,6 +136,7 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByRole("cell", { name: "GSTR-2B", exact: true })).toBeVisible();
   await expect(page.locator(".type-pill").first()).toHaveCSS("border-radius", "0px");
   await expect(page.locator(".type-pill").first()).toHaveCSS("font-weight", "400");
+  await expect(page.locator(".status-pill").first()).toHaveCSS("border-radius", "0px");
 
   await page.getByRole("button", { name: "Modify mapping" }).first().click();
   await expect(page.getByRole("heading", { name: "Return identity" })).toBeVisible();
@@ -312,6 +318,7 @@ test("auditor cannot reconcile documents belonging to different client GSTINs", 
 
 test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {
   const email = `mapping-auditor-${Date.now()}@example.test`;
+  await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByLabel("Full name").fill("Mapping Auditor");
@@ -325,6 +332,11 @@ test("auditor decides whether incomplete source fields should be rendered as ext
   await expect(tabPanel.getByRole("heading", { name: "Expected reconciliation fields were not mapped" })).toBeVisible();
   await expect(tabPanel.getByText("Ledger Ref", { exact: true })).toBeVisible();
   await expect(tabPanel.getByText("Party Label", { exact: true })).toBeVisible();
+  await expect(tabPanel.locator(".missing-fields")).toHaveCSS("color", "rgb(154, 66, 66)");
+  await expect(page.locator(".status-warning").first()).toHaveCSS("color", "rgb(154, 66, 66)");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(tabPanel.locator(".missing-fields")).toHaveCSS("color", "rgb(237, 150, 150)");
+  await expect(page.locator(".status-warning").first()).toHaveCSS("color", "rgb(237, 150, 150)");
   await page.screenshot({ path: path.join(root, "test-results/gst-render-prompt.png"), fullPage: true });
 
   await tabPanel.getByRole("button", { name: "Render original columns" }).click();
