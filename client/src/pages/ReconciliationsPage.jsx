@@ -73,7 +73,7 @@ export default function ReconciliationsPage() {
     event.preventDefault();
     chooseClient(clientGstinSearchTarget(clientGstins, gstinSearch) || "");
   };
-
+  
   return (
     <div className="workspace-shell">
       <TopNav />
