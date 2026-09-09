@@ -19,6 +19,7 @@ Authentication uses the `gst_session` HTTP-only cookie.
 | GET | `/api/documents/:id` | Yes | → `{document}` including normalized rows/source fields |
 | GET | `/api/document-org/:id` | Yes | Re-extracts the owned source file → `{document}` with `original:{fields[],rows[],rowCount,extractionVersion}` and no normalized `parsed` payload |
 | DELETE | `/api/documents` | Yes | `{documentIds:[1–100]}` → `{deletedIds[],errors[]}`; returns `207` when only part of the selection could be removed |
+| PUT | `/api/documents/gstin` | Yes | `{documentIds:[1–100],gstin}` → `{documents[]}`; applies the validated client GSTIN to each selected document mapping |
 | DELETE | `/api/documents/:id` | Yes | Removes the owned document metadata and uploaded file → `204` |
 | PUT | `/api/documents/:id/mapping` | Yes | `{documentType,gstin,returnPeriod,fieldMap}` → `{document}` |
 | PUT | `/api/documents/:id/view-preference` | Yes | `{mode:"original"|"hidden"}` → `{document}` |
@@ -28,6 +29,8 @@ Authentication uses the `gst_session` HTTP-only cookie.
 | GET | `/api/reconciliations/:id` | Yes | → `{reconciliation}` |
 
 Supported `documentType` values are `gstr1`, `gstr2`, `gstr2b`, `gstr3b`, `salesRegister`, and `unknown`. `fieldMap` keys are restricted to the server's canonical columns.
+
+Bulk GSTIN insertion accepts only the GSTIN format `NNAAAAANNNNAZN`, matching `/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i`.
 
 The Home document viewer uses `GET /api/document-org/:id`, not normalized reconciliation rows. `original.fields` comes from the owner-scoped `document_org` metadata row and is reconciled with newly discovered source fields during extraction. Existing documents without metadata are backfilled on their first original-view request.
 

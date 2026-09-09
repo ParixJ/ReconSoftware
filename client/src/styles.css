@@ -257,6 +257,7 @@ tbody tr:hover td { background: var(--surface-hover); }
 .reconcile-copy h2 { margin: 0; font-size: 16px; }
 .reconcile-copy p:last-child { margin: 2px 0 0; font-size: 11px; }
 .tolerance-controls { display: flex; gap: 10px; }
+.tolerance-controls .button { height: 38px; align-self: end; white-space: nowrap; }
 .run-button { min-width: 148px; }
 .document-panel, .viewer-panel { width: 100%; justify-self: stretch; }
 .viewer-panel { min-height: 360px; overflow: hidden; }

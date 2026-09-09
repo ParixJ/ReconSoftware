@@ -10,6 +10,8 @@ import TopNav from "../components/TopNav.jsx";
 import UploadPanel from "../components/UploadPanel.jsx";
 import { crossExamineClientGstins } from "../utils/gstinCrossExamination.js";
 
+const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
 export default function WorkspacePage() {
   const navigate = useNavigate();
   const mappingMatch = useMatch("/home/mapping/:documentId");
@@ -24,10 +26,12 @@ export default function WorkspacePage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [savingMapping, setSavingMapping] = useState(false);
+  const [applyingGstin, setApplyingGstin] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [notice, setNotice] = useState(null);
   const [tolerances, setTolerances] = useState({ amountTolerance: 1, dateToleranceDays: 0 });
+  const [bulkGstin, setBulkGstin] = useState("");
 
   useEffect(() => {
     documentsApi.list()
@@ -145,6 +149,41 @@ export default function WorkspacePage() {
     } finally { setRunning(false); }
   };
 
+  const applyGstinToSelected = async () => {
+    const gstin = bulkGstin.trim().toUpperCase();
+    if (!selectedIds.length) {
+      setNotice({ tone: "danger", title: "No documents selected", message: "Select one or more documents before applying a client GSTIN." });
+      return;
+    }
+    if (!GSTIN_PATTERN.test(gstin)) {
+      setNotice({ tone: "danger", title: "Invalid GSTIN", message: "Enter a valid 15-character GSTIN before applying it to selected documents." });
+      return;
+    }
+
+    setApplyingGstin(true);
+    setNotice(null);
+    try {
+      const { data } = await documentsApi.updateGstin(selectedIds, gstin);
+      const updatedById = new Map(data.documents.map((document) => [document.id, document]));
+      setDocuments((current) => current.map((document) => (
+        updatedById.has(document.id) ? { ...updatedById.get(document.id), parsed: undefined } : document
+      )));
+      setDetails((current) => {
+        const next = { ...current };
+        for (const document of data.documents) {
+          if (next[document.id]) next[document.id] = document;
+        }
+        return next;
+      });
+      setBulkGstin(gstin);
+      setNotice({ tone: "success", title: "GSTIN applied", message: `${data.documents.length} selected document${data.documents.length === 1 ? "" : "s"} now use ${gstin}.` });
+    } catch (error) {
+      setNotice({ tone: "danger", title: "GSTIN could not be applied", message: errorMessage(error) });
+    } finally {
+      setApplyingGstin(false);
+    }
+  };
+
   const saveMapping = async (mapping) => {
     const id = mappingMatch.params.documentId;
     setSavingMapping(true);
@@ -206,7 +245,7 @@ export default function WorkspacePage() {
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
             <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
-            <ReconciliationControls selectedCount={selectedDocuments.length} crossExamination={crossExamination} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
+            <ReconciliationControls selectedCount={selectedDocuments.length} crossExamination={crossExamination} values={tolerances} gstinValue={bulkGstin} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onGstinChange={(event) => setBulkGstin(event.target.value.toUpperCase())} onApplyGstin={applyGstinToSelected} onRun={run} running={running} applyingGstin={applyingGstin} />
             <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} detail={originalDetails[activeId]} loading={detailLoading} />
           </>
         )}

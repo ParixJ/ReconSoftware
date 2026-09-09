@@ -24,6 +24,7 @@ export const documentsApi = {
   },
   remove: (id) => api.delete(`/documents/${id}`),
   removeMany: (documentIds) => api.delete("/documents", { data: { documentIds } }),
+  updateGstin: (documentIds, gstin) => api.put("/documents/gstin", { documentIds, gstin }),
   updateMapping: (id, mapping) => api.put(`/documents/${id}/mapping`, mapping),
   updateViewPreference: (id, mode) => api.put(`/documents/${id}/view-preference`, { mode }),
 };
