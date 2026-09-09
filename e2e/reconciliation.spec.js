@@ -316,7 +316,7 @@ test("auditor cannot reconcile documents belonging to different client GSTINs", 
   await expect(page.getByRole("button", { name: "Run on 2 files" })).toBeEnabled();
 });
 
-test("auditor decides whether incomplete source fields should be rendered as extracted", async ({ page }) => {
+test("auditor always sees every original source field", async ({ page }) => {
   const email = `mapping-auditor-${Date.now()}@example.test`;
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/auth");
@@ -329,24 +329,15 @@ test("auditor decides whether incomplete source fields should be rendered as ext
 
   await page.locator('input[type="file"]').setInputFiles({ name: "unmapped-ledger.csv", mimeType: "text/csv", buffer: Buffer.from(unmappedLedger) });
   const tabPanel = page.getByRole("tabpanel");
-  await expect(tabPanel.getByRole("heading", { name: "Expected reconciliation fields were not mapped" })).toBeVisible();
-  await expect(tabPanel.getByText("Ledger Ref", { exact: true })).toBeVisible();
-  await expect(tabPanel.getByText("Party Label", { exact: true })).toBeVisible();
-  await expect(tabPanel.locator(".missing-fields")).toHaveCSS("color", "rgb(154, 66, 66)");
+  await expect(tabPanel.getByRole("heading", { name: "Expected reconciliation fields were not mapped" })).toHaveCount(0);
+  await expect(tabPanel.getByRole("columnheader", { name: "Ledger Ref", exact: true })).toBeVisible();
+  await expect(tabPanel.getByRole("columnheader", { name: "Party Label", exact: true })).toBeVisible();
+  await expect(tabPanel.getByRole("columnheader", { name: "Net Figure", exact: true })).toBeVisible();
+  await expect(tabPanel.getByRole("columnheader", { name: "Tax Figure", exact: true })).toBeVisible();
+  await expect(tabPanel.getByRole("cell", { name: "L-1001", exact: true })).toBeVisible();
+  await expect(tabPanel.getByRole("button", { name: "Modify mapping" })).toBeVisible();
   await expect(page.locator(".status-warning").first()).toHaveCSS("color", "rgb(154, 66, 66)");
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
-  await expect(tabPanel.locator(".missing-fields")).toHaveCSS("color", "rgb(237, 150, 150)");
   await expect(page.locator(".status-warning").first()).toHaveCSS("color", "rgb(237, 150, 150)");
-  await page.screenshot({ path: path.join(root, "test-results/gst-render-prompt.png"), fullPage: true });
-
-  await tabPanel.getByRole("button", { name: "Render original columns" }).click();
-  await expect(tabPanel.getByRole("columnheader", { name: "Ledger Ref", exact: true })).toBeVisible();
-  await expect(tabPanel.getByRole("cell", { name: "L-1001", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(root, "test-results/gst-original-fields-view.png"), fullPage: true });
-
-  await tabPanel.getByRole("button", { name: "Hide table" }).click();
-  await expect(tabPanel.getByRole("heading", { name: "Document fields are not being rendered" })).toBeVisible();
-  await expect(tabPanel.getByRole("table")).toHaveCount(0);
-  await tabPanel.getByRole("button", { name: "Render original columns" }).click();
-  await expect(tabPanel.getByRole("columnheader", { name: "Tax Figure", exact: true })).toBeVisible();
 });

@@ -7,6 +7,7 @@ import { AppError } from "../errors.js";
 import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../api/contracts.js";
 import { applyFieldMapping } from "../parsers/normalizers.js";
 import { parseUploadedFile } from "../parsers/index.js";
+import { extractOriginalDocument } from "../parsers/originalDocument.js";
 import { GSTR1_PARSER_VERSION } from "../parsers/gstr1.js";
 import { jsonSafeParse } from "../parsers/utils.js";
 
@@ -57,7 +58,7 @@ function mappingCoverage(parsed, mapping, documentType, preference) {
   };
 }
 
-function deserialize(row, includeParsed = false) {
+export function deserializeDocument(row, includeParsed = false) {
   if (!row) return null;
   const document = {
     id: row.id,
@@ -81,7 +82,7 @@ function deserialize(row, includeParsed = false) {
   return document;
 }
 
-function insertDocument(userId, file, parsed) {
+function insertDocument(userId, file, parsed, original) {
   const mapping = { documentType: parsed.documentType, gstin: parsed.gstin, returnPeriod: parsed.returnPeriod, fieldMap: parsed.suggestedFieldMap || {} };
   const coverage = mappingCoverage(parsed, mapping, parsed.documentType, null);
   const row = {
@@ -102,16 +103,29 @@ function insertDocument(userId, file, parsed) {
     view_preference: null,
     created_at: new Date().toISOString(),
   };
-  getDb().prepare(`
-    INSERT INTO documents (
-      id, user_id, original_name, stored_name, mime_type, file_type, document_type,
-      gstin, return_period, status, record_count, parsed_data, mapping, anomalies, view_preference, created_at
-    ) VALUES (
-      @id, @user_id, @original_name, @stored_name, @mime_type, @file_type, @document_type,
-      @gstin, @return_period, @status, @record_count, @parsed_data, @mapping, @anomalies, @view_preference, @created_at
-    )
-  `).run(row);
-  return deserialize(row, true);
+  const db = getDb();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(`
+      INSERT INTO documents (
+        id, user_id, original_name, stored_name, mime_type, file_type, document_type,
+        gstin, return_period, status, record_count, parsed_data, mapping, anomalies, view_preference, created_at
+      ) VALUES (
+        @id, @user_id, @original_name, @stored_name, @mime_type, @file_type, @document_type,
+        @gstin, @return_period, @status, @record_count, @parsed_data, @mapping, @anomalies, @view_preference, @created_at
+      )
+    `).run(row);
+    db.prepare(`
+      INSERT INTO document_org (
+        document_id, user_id, field_names, header_row_number, extraction_version, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 1, ?, ?)
+    `).run(row.id, userId, JSON.stringify(original.fields), original.headerRowNumber, row.created_at, row.created_at);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return deserializeDocument(row, true);
 }
 
 function storedFilePath(row) {
@@ -183,7 +197,12 @@ export async function createDocuments(userId, files) {
   const outcomes = await Promise.all(files.map(async (file) => {
     try {
       const parsed = await parseUploadedFile(file.path, file.originalname, file.mimetype);
-      return { document: insertDocument(userId, file, parsed) };
+      const original = await extractOriginalDocument(file.path, file.originalname, file.mimetype, {
+        fileType: parsed.fileType,
+        headerRowNumber: parsed.headerRowNumber,
+        parsed,
+      });
+      return { document: insertDocument(userId, file, parsed, original) };
     } catch (error) {
       await fs.unlink(file.path).catch(() => {});
       return { error: { filename: file.originalname, code: error.code || "PARSE_FAILED", message: error.message || "The document could not be parsed." } };
@@ -196,7 +215,7 @@ export async function createDocuments(userId, files) {
 }
 
 export function listDocuments(userId) {
-  return getDb().prepare("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC").all(userId).map((row) => deserialize(row));
+  return getDb().prepare("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC").all(userId).map((row) => deserializeDocument(row));
 }
 
 export function getDocumentRow(userId, id) {
@@ -206,11 +225,11 @@ export function getDocumentRow(userId, id) {
 }
 
 export function getDocument(userId, id) {
-  return deserialize(getDocumentRow(userId, id), true);
+  return deserializeDocument(getDocumentRow(userId, id), true);
 }
 
 export async function getCurrentDocument(userId, id) {
-  return deserialize(await refreshParsedDocument(getDocumentRow(userId, id)), true);
+  return deserializeDocument(await refreshParsedDocument(getDocumentRow(userId, id)), true);
 }
 
 export async function deleteDocument(userId, id) {
@@ -304,6 +323,6 @@ export function updateViewPreference(userId, id, input) {
 export async function rowsForReconciliation(userId, ids) {
   return Promise.all(ids.map(async (id) => {
     const row = await refreshParsedDocument(getDocumentRow(userId, id));
-    return { ...deserialize(row), parsed: jsonSafeParse(row.parsed_data, { rows: [], summary: {} }) };
+    return { ...deserializeDocument(row), parsed: jsonSafeParse(row.parsed_data, { rows: [], summary: {} }) };
   }));
 }

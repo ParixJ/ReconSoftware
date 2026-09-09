@@ -9,8 +9,8 @@ export function errorHandler(error, _req, res, _next) {
   let normalized = error;
   if (error instanceof multer.MulterError) {
     const messages = {
-      LIMIT_FILE_SIZE: "Each document must be 20 MB or smaller.",
-      LIMIT_FILE_COUNT: "Upload no more than 10 documents at once.",
+      LIMIT_FILE_SIZE: "Each document must be 2 MB or smaller.",
+      LIMIT_FILE_COUNT: "Upload no more than 100 documents at once.",
       LIMIT_UNEXPECTED_FILE: "Use the files field to upload documents.",
     };
     normalized = new AppError(400, error.code, messages[error.code] || "The upload could not be accepted.");

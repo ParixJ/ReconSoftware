@@ -53,7 +53,7 @@ export function crossExamineClientGstins(documents) {
         : "matched";
   return {
     status,
-    canReconcile: status !== "mismatch",
+    canReconcile: status !== "mismatch" && status !== "unverified",
     clientGstin: gstinGroups.length === 1 ? gstinGroups[0].gstin : null,
     documentCount: documents.length,
     identifiedCount: documents.length - missingDocuments.length,
@@ -436,7 +436,7 @@ async function serializeCurrent(userId, row, documentsPromise) {
 
 export async function runReconciliation(userId, input) {
   const documentIds = [...new Set(Array.isArray(input.documentIds) ? input.documentIds.map(String) : [])];
-  if (documentIds.length < 2 || documentIds.length > 10) throw new AppError(400, "INVALID_SELECTION", "Select between 2 and 10 documents to reconcile.");
+  if (documentIds.length < 2 || documentIds.length > 100) throw new AppError(400, "INVALID_SELECTION", "Select between 2 and 100 documents to reconcile.");
   const amountTolerance = Number(input.amountTolerance ?? 1);
   const dateToleranceDays = Number(input.dateToleranceDays ?? 0);
   if (!Number.isFinite(amountTolerance) || amountTolerance < 0 || amountTolerance > 1000000) throw new AppError(400, "INVALID_AMOUNT_TOLERANCE", "Amount tolerance must be between ₹0 and ₹10,00,000.");
@@ -448,7 +448,15 @@ export async function runReconciliation(userId, input) {
   }
 
   const crossExamination = crossExamineClientGstins(documents);
-  if (!crossExamination.canReconcile) {
+  if (crossExamination.status === "unverified") {
+    throw new AppError(
+      422,
+      "CLIENT_GSTIN_REQUIRED",
+      "At least one selected document must identify the client GSTIN before reconciliation can run.",
+      { crossExamination },
+    );
+  }
+  if (crossExamination.status === "mismatch") {
     const gstins = crossExamination.gstinGroups.map((group) => group.gstin).join(", ");
     throw new AppError(
       422,

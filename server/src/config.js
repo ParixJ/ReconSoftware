@@ -13,7 +13,7 @@ export const config = {
   databasePath: path.resolve(process.env.GST_DATABASE_PATH || path.join(dataDir, "gst-reconciliation.sqlite")),
   uploadDir: path.resolve(process.env.GST_UPLOAD_DIR || path.join(dataDir, "uploads")),
   clientDist: path.resolve(serverRoot, "../client/dist"),
-  maxUploadBytes: 20 * 1024 * 1024,
+  maxUploadBytes: 2 * 1024 * 1024,
   sessionCookie: "gst_session",
   sessionTtlMs: 7 * 24 * 60 * 60 * 1000,
   sessionSecret: process.env.SESSION_SECRET || '7a23edca270f81cd2b1b62bbe6e0ec1f7db66b351c474c76701f30e09a47390d',

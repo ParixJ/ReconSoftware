@@ -430,6 +430,42 @@ test("rejects a sales register selected with another client's GST returns", asyn
   assert.equal(getDb().prepare("SELECT COUNT(*) AS count FROM reconciliations WHERE user_id = ?").get(userId).count, 0);
 });
 
+test("rejects reconciliation when no selected document identifies a client GSTIN", async () => {
+  const userId = crypto.randomUUID();
+  getDb().prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, "missing-client-gstin@example.test", "Missing GSTIN Auditor", "test-only", new Date().toISOString());
+  const gstr1 = parseGstr1Text(`
+    FORM GSTR-1 Tax period April 2025
+    B2B regular invoices 1 Invoice 1,000.00 0.00 90.00 90.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "missing-gstin-gstr1.pdf");
+  const gstr3b = parseGstr3bText(`
+    FORM GSTR-3B Period April 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 1,000.00 0.00 90.00 90.00 0.00
+    (b) Outward taxable supplies - zero rated 0.00 0.00 - - 0.00
+    (c) Other outward supplies - nil rated/exempt 0.00 - - - -
+    (d) Inward supplies liable to reverse charge 0.00 0.00 0.00 0.00 0.00
+    (e) Non-GST outward supplies 0.00 - - - -
+  `, "missing-gstin-gstr3b.pdf");
+  const documentIds = [
+    insertDocument(userId, "missing-gstin-gstr1.pdf", "pdf", gstr1),
+    insertDocument(userId, "missing-gstin-gstr3b.pdf", "pdf", gstr3b),
+  ];
+
+  await assert.rejects(
+    runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 }),
+    (error) => {
+      assert.equal(error.status, 422);
+      assert.equal(error.code, "CLIENT_GSTIN_REQUIRED");
+      assert.equal(error.details.crossExamination.status, "unverified");
+      assert.equal(error.details.crossExamination.identifiedCount, 0);
+      return true;
+    },
+  );
+  assert.equal(getDb().prepare("SELECT COUNT(*) AS count FROM reconciliations WHERE user_id = ?").get(userId).count, 0);
+});
+
 test.after(() => {
   closeDb();
   fs.rmSync(testRoot, { recursive: true, force: true });

@@ -13,7 +13,7 @@ process.env.GST_UPLOAD_DIR = path.join(testRoot, "uploads");
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const { createApp } = await import("../src/app.js");
-const { closeDb } = await import("../src/db/database.js");
+const { closeDb, getDb } = await import("../src/db/database.js");
 const { parseUploadedFile } = await import("../src/parsers/index.js");
 
 function fixture(relativePath) {
@@ -88,6 +88,19 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.equal(uploaded.documents.length, 3);
   assert.deepEqual(new Set(uploaded.documents.map((item) => item.documentType)), new Set(["gstr1", "gstr3b", "gstr2b"]));
 
+  const gstr1Document = uploaded.documents.find((item) => item.documentType === "gstr1");
+  const originalGstr1Response = await fetch(`${base}/document-org/${gstr1Document.id}`, { headers: { cookie } });
+  assert.equal(originalGstr1Response.status, 200);
+  const originalGstr1 = (await originalGstr1Response.json()).document;
+  assert.equal(originalGstr1.parsed, undefined);
+  assert.ok(originalGstr1.original.fields.includes("cdnr.nt.ntty"));
+  assert.ok(originalGstr1.original.fields.includes("cdnr.nt.nt_num"));
+  assert.ok(originalGstr1.original.rows.some((row) => row["cdnr.nt.ntty"] === "C" && row["cdnr.nt.nt_num"] === "CN-1"));
+  assert.deepEqual(
+    JSON.parse(getDb().prepare("SELECT field_names FROM document_org WHERE document_id = ?").get(gstr1Document.id).field_names),
+    originalGstr1.original.fields,
+  );
+
   const runResponse = await fetch(`${base}/reconciliations`, {
     method: "POST", headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ documentIds: uploaded.documents.map((item) => item.id), amountTolerance: 1, dateToleranceDays: 0 }),
@@ -112,6 +125,12 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.equal(unmappedUpload.documents[0].mappingCoverage.viewMode, "prompt");
   assert.deepEqual(unmappedUpload.documents[0].parsed.sourceFields, ["Ledger Ref", "Party Label", "Net Figure", "Tax Figure"]);
 
+  const unmappedOriginalResponse = await fetch(`${base}/document-org/${unmappedId}`, { headers: { cookie } });
+  assert.equal(unmappedOriginalResponse.status, 200);
+  const unmappedOriginal = (await unmappedOriginalResponse.json()).document;
+  assert.deepEqual(unmappedOriginal.original.fields, ["Ledger Ref", "Party Label", "Net Figure", "Tax Figure"]);
+  assert.equal(unmappedOriginal.original.rows[0]["Ledger Ref"], "L-1001");
+
   const originalResponse = await fetch(`${base}/documents/${unmappedId}/view-preference`, {
     method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ mode: "original" }),
   });
@@ -127,6 +146,7 @@ test("authenticated API isolates documents and runs the full three-return flow",
   const otherList = await fetch(`${base}/documents`, { headers: { cookie: otherCookie } });
   assert.equal(otherList.status, 200);
   assert.equal((await otherList.json()).documents.length, 0);
+  assert.equal((await fetch(`${base}/document-org/${gstr1Document.id}`, { headers: { cookie: otherCookie } })).status, 404);
 
   const storedFilesBeforeDelete = fs.readdirSync(process.env.GST_UPLOAD_DIR);
   const otherDeleteResponse = await fetch(`${base}/documents/${unmappedId}`, { method: "DELETE", headers: { cookie: otherCookie } });
@@ -136,6 +156,7 @@ test("authenticated API isolates documents and runs the full three-return flow",
   const deleteResponse = await fetch(`${base}/documents/${unmappedId}`, { method: "DELETE", headers: { cookie } });
   assert.equal(deleteResponse.status, 204);
   assert.equal((await fetch(`${base}/documents/${unmappedId}`, { headers: { cookie } })).status, 404);
+  assert.equal(getDb().prepare("SELECT document_id FROM document_org WHERE document_id = ?").get(unmappedId), undefined);
   assert.equal(fs.readdirSync(process.env.GST_UPLOAD_DIR).length, storedFilesBeforeDelete.length - 1);
 
   const bulkIds = uploaded.documents.slice(0, 2).map((document) => document.id);

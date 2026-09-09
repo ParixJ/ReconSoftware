@@ -1,8 +1,13 @@
-import { AlertTriangle, FileSearch, LoaderCircle, X } from "lucide-react";
-import { TYPE_LABELS, money } from "../utils/format.js";
-import DocumentRenderGate from "./DocumentRenderGate.jsx";
+import { AlertTriangle, FileCog, FileSearch, LoaderCircle, X } from "lucide-react";
+import { TYPE_LABELS } from "../utils/format.js";
 
-export default function DocumentTabs({ selectedDocuments, activeId, onActive, onRemove, onMap, onViewDecision, decisionSaving, detail, loading }) {
+function originalValue(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+export default function DocumentTabs({ selectedDocuments, activeId, onActive, onRemove, onMap, detail, loading }) {
   return (
     <section className="panel viewer-panel" aria-labelledby="viewer-heading">
       <div className="section-heading viewer-heading"><div><p className="eyebrow">Document browser</p><h2 id="viewer-heading">Return document data</h2></div></div>
@@ -25,20 +30,20 @@ export default function DocumentTabs({ selectedDocuments, activeId, onActive, on
                 <div className="document-meta-strip">
                   <span><small>Client GSTIN</small><strong className="mono">{detail.gstin || "Not detected"}</strong></span>
                   <span><small>Return type</small><strong>{TYPE_LABELS[detail.documentType]}</strong></span>
-                  <span><small>Rows</small><strong>{detail.recordCount.toLocaleString("en-IN")}</strong></span>
+                  <span><small>Rows</small><strong>{detail.original.rowCount.toLocaleString("en-IN")}</strong></span>
                   <span><small>Extraction</small><strong>{detail.status === "ready" ? "Ready" : "Review mapping"}</strong></span>
                   {detail.anomalies.length ? <span className="meta-warning"><AlertTriangle size={15} />{detail.anomalies.length} extraction issue{detail.anomalies.length === 1 ? "" : "s"}</span> : null}
+                  <button className="button button-secondary" onClick={() => onMap(detail.id)}><FileCog size={15} />Modify mapping</button>
                 </div>
-                {detail.mappingCoverage?.viewMode !== "normalized" ? (
-                  <DocumentRenderGate detail={detail} onDecision={(mode) => onViewDecision(detail.id, mode)} onMap={() => onMap(detail.id)} saving={decisionSaving} />
-                ) : !detail.parsed.rows.length ? <div className="empty-state"><FileSearch size={24} /><strong>No structured rows</strong><p>Review the source and Modify mapping before reconciliation.</p></div> : (
+                {!detail.original.rows.length ? <div className="empty-state"><FileSearch size={24} /><strong>No extractable rows</strong><p>Review the source or modify its mapping before reconciliation.</p></div> : (
                   <div className="table-scroll rows-table-scroll">
-                    <table className="data-table">
-                      <thead><tr><th>#</th><th>Section</th><th>Counterparty GSTIN</th><th>Trade name</th><th>Invoice / document</th><th>Date</th><th>PoS</th><th className="number-cell">Invoice value</th><th className="number-cell">Taxable value</th><th className="number-cell">IGST</th><th className="number-cell">CGST</th><th className="number-cell">SGST</th><th className="number-cell">Cess</th></tr></thead>
-                      <tbody>{detail.parsed.rows.map((row, index) => (
-                        <tr key={`${row.invoiceNumber || row.section}-${index}`}>
-                          <td className="row-number">{index + 1}</td><td><span className="section-code">{row.section || "—"}</span></td><td className="mono">{row.counterpartyGstin || "—"}</td><td>{row.tradeName || "—"}</td><td>{row.invoiceNumber || "—"}</td><td className="mono">{row.invoiceDate || "—"}</td><td>{row.placeOfSupply || "—"}</td><td className="number-cell">{money(row.invoiceValue)}</td><td className="number-cell">{money(row.taxableValue)}</td><td className="number-cell">{money(row.igst)}</td><td className="number-cell">{money(row.cgst)}</td><td className="number-cell">{money(row.sgst)}</td><td className="number-cell">{money(row.cess)}</td>
-                        </tr>
+                    <table className="raw-data-table">
+                      <thead><tr><th>#</th>{detail.original.fields.map((field) => <th key={field}>{field}</th>)}</tr></thead>
+                      <tbody>{detail.original.rows.map((row, index) => (
+                        <tr key={index}><td className="row-number">{index + 1}</td>{detail.original.fields.map((field) => {
+                          const value = originalValue(row[field]);
+                          return <td key={field} title={value}>{value}</td>;
+                        })}</tr>
                       ))}</tbody>
                     </table>
                   </div>

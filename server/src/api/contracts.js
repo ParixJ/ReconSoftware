@@ -17,6 +17,7 @@ export const CANONICAL_FIELDS = Object.freeze([
 
 export const API_CONTRACTS = Object.freeze({
   auth: ["POST /api/auth/register", "POST /api/auth/login", "GET /api/auth/me", "POST /api/auth/logout"],
+  documentOriginal: ["GET /api/document-org/:id"],
   documents: ["GET /api/documents", "POST /api/documents/upload", "GET /api/documents/:id", "DELETE /api/documents", "DELETE /api/documents/:id", "PUT /api/documents/:id/mapping", "PUT /api/documents/:id/view-preference"],
   reconciliations: ["GET /api/reconciliations", "GET /api/reconciliations/export", "GET /api/reconciliations/:id", "POST /api/reconciliations"],
 });

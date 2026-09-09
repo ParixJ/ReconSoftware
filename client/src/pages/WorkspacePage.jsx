@@ -17,13 +17,13 @@ export default function WorkspacePage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [details, setDetails] = useState({});
+  const [originalDetails, setOriginalDetails] = useState({});
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [savingMapping, setSavingMapping] = useState(false);
-  const [savingViewDecision, setSavingViewDecision] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -36,20 +36,29 @@ export default function WorkspacePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const requestedDetailId = mappingMatch?.params.documentId || activeId;
+  const mappingDocumentId = mappingMatch?.params.documentId;
   useEffect(() => {
-    if (!requestedDetailId || details[requestedDetailId]) return;
+    if (!mappingDocumentId || details[mappingDocumentId]) return;
     setDetailLoading(true);
-    documentsApi.get(requestedDetailId)
+    documentsApi.get(mappingDocumentId)
       .then(({ data }) => {
-        setDetails((current) => ({ ...current, [requestedDetailId]: data.document }));
-        setDocuments((current) => current.map((document) => document.id === requestedDetailId
+        setDetails((current) => ({ ...current, [mappingDocumentId]: data.document }));
+        setDocuments((current) => current.map((document) => document.id === mappingDocumentId
           ? { ...data.document, parsed: undefined }
           : document));
       })
       .catch((error) => setNotice({ tone: "danger", title: "Document could not load", message: errorMessage(error) }))
       .finally(() => setDetailLoading(false));
-  }, [requestedDetailId, details]);
+  }, [mappingDocumentId, details]);
+
+  useEffect(() => {
+    if (!activeId || originalDetails[activeId]) return;
+    setDetailLoading(true);
+    documentsApi.getOriginal(activeId)
+      .then(({ data }) => setOriginalDetails((current) => ({ ...current, [activeId]: data.document })))
+      .catch((error) => setNotice({ tone: "danger", title: "Original document could not load", message: errorMessage(error) }))
+      .finally(() => setDetailLoading(false));
+  }, [activeId, originalDetails]);
 
   const selectedDocuments = useMemo(() => selectedIds.map((id) => documents.find((document) => document.id === id)).filter(Boolean), [selectedIds, documents]);
   const crossExamination = useMemo(() => crossExamineClientGstins(selectedDocuments), [selectedDocuments]);
@@ -82,6 +91,11 @@ export default function WorkspacePage() {
       for (const id of removed) delete next[id];
       return next;
     });
+    setOriginalDetails((current) => {
+      const next = { ...current };
+      for (const id of removed) delete next[id];
+      return next;
+    });
   };
 
   const upload = async (files) => {
@@ -98,12 +112,17 @@ export default function WorkspacePage() {
       else if (needsMapping) setNotice({ tone: "warning", title: `${data.documents.length} document${data.documents.length === 1 ? "" : "s"} extracted; mapping review required`, message: "Choose whether to render unmatched source fields as extracted, keep the table hidden, or modify the mapping." });
       else setNotice({ tone: "success", title: `${data.documents.length} document${data.documents.length === 1 ? "" : "s"} ready`, message: "Return identity and structured rows were extracted on the server." });
     } catch (error) {
+      console.log(error.response.data.error);
       setNotice({ tone: "danger", title: "Upload failed", message: errorMessage(error) });
     } finally { setUploading(false); setUploadProgress(0); }
   };
 
   const run = async () => {
-    if (!crossExamination.canReconcile) {
+    if (crossExamination.status === "unverified") {
+      setNotice({ tone: "danger", title: "Client GSTIN required", message: "Map or correct the client GSTIN on at least one selected document before reconciliation." });
+      return;
+    }
+    if (crossExamination.status === "mismatch") {
       setNotice({ tone: "danger", title: "Client GSTIN mismatch", message: "Remove unrelated documents or correct their client GSTIN mappings before reconciliation." });
       return;
     }
@@ -136,16 +155,6 @@ export default function WorkspacePage() {
       navigate("/home");
       setNotice({ tone: "success", title: "Mapping saved", message: "Normalized rows and active reconciliation exceptions were recalculated." });
     } finally { setSavingMapping(false); }
-  };
-
-  const saveViewPreference = async (id, mode) => {
-    setSavingViewDecision(true);
-    try {
-      const { data } = await documentsApi.updateViewPreference(id, mode);
-      setDetails((current) => ({ ...current, [id]: data.document }));
-    } catch (error) {
-      setNotice({ tone: "danger", title: "Document view preference was not saved", message: errorMessage(error) });
-    } finally { setSavingViewDecision(false); }
   };
 
   const deleteUploadedDocument = async (document) => {
@@ -198,7 +207,7 @@ export default function WorkspacePage() {
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
             <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
             <ReconciliationControls selectedCount={selectedDocuments.length} crossExamination={crossExamination} values={tolerances} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onRun={run} running={running} />
-            <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} onViewDecision={saveViewPreference} decisionSaving={savingViewDecision} detail={details[activeId]} loading={detailLoading} />
+            <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} detail={originalDetails[activeId]} loading={detailLoading} />
           </>
         )}
       </main>

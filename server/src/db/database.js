@@ -51,6 +51,19 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_documents_user_created ON documents(user_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS document_org (
+      document_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      field_names TEXT NOT NULL DEFAULT '[]',
+      header_row_number INTEGER,
+      extraction_version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_document_org_user ON document_org(user_id);
+
     CREATE TABLE IF NOT EXISTS reconciliations (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,

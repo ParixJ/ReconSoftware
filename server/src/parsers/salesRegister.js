@@ -11,7 +11,7 @@ import {
 
 const MAX_HEADER_ROWS = 60;
 const DATE_HEADERS = ["bill date", "invoice date", "document date", "voucher date", "date"];
-const TAXABLE_HEADERS = ["assessable amount", "taxable value", "taxable amount", "net taxable value"];
+const TAXABLE_HEADERS = ["assessable amount", "taxable value", "taxable amount", "net taxable value", "product amount"];
 const INVOICE_VALUE_HEADERS = ["bill amount", "invoice value", "invoice amount", "gross amount", "total amount"];
 const INVOICE_NUMBER_HEADERS = ["bill no", "bill number", "invoice no", "invoice number", "document number", "voucher number"];
 const PARTY_GSTIN_HEADERS = ["party gstin no", "party gstin", "recipient gstin", "gstin/uin of recipient", "customer gstin", "buyer gstin"];

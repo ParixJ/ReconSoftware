@@ -10,7 +10,7 @@ export default function UploadPanel({ onUpload, uploading, progress }) {
     <section className="panel upload-panel" aria-labelledby="upload-heading">
       <div className="section-heading compact-heading">
         <div><h2 id="upload-heading">Add return documents</h2></div>
-        <span className="section-helper">Up to 10 files · 20 MB each</span>
+        <span className="section-helper">Up to 100 files · 2 MB each</span>
       </div>
       <div
         className={`dropzone ${dragging ? "dropzone-active" : ""}`}

@@ -280,6 +280,8 @@ tbody tr:hover td { background: var(--surface-hover); }
 .document-meta-strip small { color: var(--text-secondary); font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
 .document-meta-strip strong { font-size: 11px; }
 .document-meta-strip .meta-warning { display: flex; flex-direction: row; align-items: center; gap: 5px; margin-left: auto; color: var(--danger); border-right: 0; font-size: 11px; font-weight: 400; }
+.document-meta-strip > .button { flex: 0 0 auto; margin-left: auto; }
+.document-meta-strip .meta-warning + .button { margin-left: 12px; }
 .rows-table-scroll { max-height: 520px; border-top: 0; }
 .rows-table-scroll th { top: 0; }
 .data-table { min-width: 1460px; }

@@ -7,6 +7,7 @@ import { getDb } from "./db/database.js";
 import { requireAuth } from "./middleware/auth.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 import authRoutes from "./routes/authRoutes.js";
+import documentOriginalRoutes from "./routes/documentOriginalRoutes.js";
 import documentRoutes from "./routes/documentRoutes.js";
 import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import session from 'express-session'
@@ -21,6 +22,7 @@ export function createApp() {
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
   app.use("/api/auth", authRoutes);
+  app.use("/api/document-org", requireAuth, documentOriginalRoutes);
   app.use("/api/documents", requireAuth, documentRoutes);
   app.use("/api/reconciliations", requireAuth, reconciliationRoutes);
 

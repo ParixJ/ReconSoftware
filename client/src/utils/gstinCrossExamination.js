@@ -36,7 +36,7 @@ export function crossExamineClientGstins(documents = []) {
 
   return {
     status,
-    canReconcile: status !== "mismatch",
+    canReconcile: status !== "mismatch" && status !== "unverified",
     clientGstin: gstinGroups.length === 1 ? gstinGroups[0].gstin : null,
     documentCount: documents.length,
     identifiedCount: documents.length - missingDocuments.length,

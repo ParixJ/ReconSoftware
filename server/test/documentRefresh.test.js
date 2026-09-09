@@ -14,6 +14,7 @@ process.env.GST_UPLOAD_DIR = path.join(testRoot, "uploads");
 
 const { getDb, closeDb } = await import("../src/db/database.js");
 const { getCurrentDocument } = await import("../src/services/documentService.js");
+const { getOriginalDocument } = await import("../src/services/documentOriginalService.js");
 const { GSTR1_PARSER_VERSION } = await import("../src/parsers/gstr1.js");
 
 test("reparses a stored GSTR-1 PDF created by an older parser", async () => {
@@ -60,6 +61,11 @@ test("reparses a stored GSTR-1 PDF created by an older parser", async () => {
     JSON.parse(getDb().prepare("SELECT parsed_data FROM documents WHERE id = ?").get(documentId).parsed_data).parserVersion,
     GSTR1_PARSER_VERSION,
   );
+
+  const original = await getOriginalDocument(userId, documentId);
+  assert.equal(original.parsed, undefined);
+  assert.ok(original.original.fields.length > 0);
+  assert.equal(getDb().prepare("SELECT document_id FROM document_org WHERE document_id = ?").get(documentId).document_id, documentId);
 });
 
 test.after(() => {

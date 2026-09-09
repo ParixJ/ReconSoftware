@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import { Router } from "express";
 import multer from "multer";
 import { config } from "../config.js";
@@ -13,7 +12,7 @@ const upload = multer({
     destination: (_req, _file, callback) => callback(null, config.uploadDir),
     filename: (_req, _file, callback) => callback(null, crypto.randomUUID()),
   }),
-  limits: { fileSize: config.maxUploadBytes, files: 10 },
+  limits: { fileSize: config.maxUploadBytes, files: 100 },
 });
 
 const router = Router();
@@ -27,7 +26,7 @@ router.delete("/", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post("/upload", upload.array("files", 10), async (req, res, next) => {
+router.post("/upload", upload.array("files", 100), async (req, res, next) => {
   try {
     if (!req.files?.length) throw new AppError(400, "FILES_REQUIRED", "Choose at least one PDF, XLSX, CSV, or JSON document.");
     const result = await createDocuments(req.user.id, req.files);

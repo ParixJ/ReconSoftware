@@ -16,6 +16,7 @@ export const authApi = {
 export const documentsApi = {
   list: () => api.get("/documents"),
   get: (id) => api.get(`/documents/${id}`),
+  getOriginal: (id) => api.get(`/document-org/${id}`),
   upload: (files, onUploadProgress) => {
     const form = new FormData();
     [...files].forEach((file) => form.append("files", file));
