@@ -9,7 +9,7 @@ import { applyFieldMapping } from "../parsers/normalizers.js";
 import { parseUploadedFile } from "../parsers/index.js";
 import { extractOriginalDocument } from "../parsers/originalDocument.js";
 import { GSTR1_PARSER_VERSION } from "../parsers/gstr1.js";
-import { jsonSafeParse } from "../parsers/utils.js";
+import { GSTIN_PATTERN, jsonSafeParse } from "../parsers/utils.js";
 
 const FIELD_LABELS = Object.freeze({
   counterpartyGstin: "Counterparty GSTIN",
@@ -29,6 +29,8 @@ const REQUIRED_FIELD_GROUPS = Object.freeze({
   gstr3b: [["taxableValue"], ["igst", "cgst", "sgst", "cess"]],
   salesRegister: [["invoiceDate"], ["taxableValue"], ["counterpartyGstin", "tradeName"]],
 });
+
+const EXACT_GSTIN_PATTERN = new RegExp(`^${GSTIN_PATTERN.source.replace(/^\\b|\\b$/g, "")}$`, "i");
 
 function mappingCoverage(parsed, mapping, documentType, preference) {
   const sourceFields = parsed.sourceFields || [];
@@ -145,15 +147,37 @@ async function removeStoredDocumentFile(row) {
   }
 }
 
-function bulkDocumentIds(input) {
+function bulkDocumentIds(input, action = "process") {
   if (!Array.isArray(input) || input.length < 1 || input.length > 100) {
-    throw new AppError(400, "INVALID_DOCUMENT_SELECTION", "Select between 1 and 100 documents to delete.");
+    throw new AppError(400, "INVALID_DOCUMENT_SELECTION", `Select between 1 and 100 documents to ${action}.`);
   }
   const documentIds = [...new Set(input.map((id) => String(id || "").trim()))];
   if (documentIds.some((id) => !id)) {
     throw new AppError(400, "INVALID_DOCUMENT_SELECTION", "Every selected document must have a valid ID.");
   }
   return documentIds;
+}
+
+function normalizedBulkGstin(input) {
+  const gstin = String(input || "").trim().toUpperCase();
+  if (!EXACT_GSTIN_PATTERN.test(gstin)) {
+    throw new AppError(400, "INVALID_GSTIN", "Enter a valid 15-character GSTIN before applying it to selected documents.");
+  }
+  return gstin;
+}
+
+function updateDocumentMappingRow(userId, row, mapping) {
+  const parsed = jsonSafeParse(row.parsed_data, null);
+  if (!parsed) throw new AppError(422, "PARSED_DATA_MISSING", "The parsed document data is unavailable. Upload the source again.");
+
+  const updated = applyFieldMapping(parsed, mapping);
+  const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
+  const status = updated.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready";
+  getDb().prepare(`
+    UPDATE documents SET document_type = ?, gstin = ?, return_period = ?, status = ?, record_count = ?,
+      parsed_data = ?, mapping = ?, anomalies = ? WHERE id = ? AND user_id = ?
+  `).run(updated.documentType, updated.gstin, updated.returnPeriod, status, updated.rows.length,
+    JSON.stringify(updated), JSON.stringify(mapping), JSON.stringify(updated.anomalies), row.id, userId);
 }
 
 function gstr1PdfNeedsRefresh(row, parsed) {
@@ -244,7 +268,7 @@ export async function deleteDocument(userId, id) {
 }
 
 export async function deleteDocuments(userId, inputIds) {
-  const documentIds = bulkDocumentIds(inputIds);
+  const documentIds = bulkDocumentIds(inputIds, "delete");
   const placeholders = documentIds.map(() => "?").join(", ");
   const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
   if (rows.length !== documentIds.length) {
@@ -278,6 +302,39 @@ export async function deleteDocuments(userId, inputIds) {
   };
 }
 
+export function updateDocumentsGstin(userId, input) {
+  console.log(input);  
+  const documentIds = bulkDocumentIds(input?.documentIds, "update");
+  const gstin = normalizedBulkGstin(input?.gstin);
+  const placeholders = documentIds.map(() => "?").join(", ");
+  const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
+  if (rows.length !== documentIds.length) {
+    throw new AppError(404, "DOCUMENTS_NOT_FOUND", "One or more selected documents do not exist or are not available to your account.");
+  }
+
+  const db = getDb();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const row of rows) {
+      const current = jsonSafeParse(row.mapping, {
+        documentType: row.document_type,
+        gstin: row.gstin,
+        returnPeriod: row.return_period,
+        fieldMap: {},
+      });
+      updateDocumentMappingRow(userId, row, { ...current, gstin });
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  const updatedRows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
+  const byId = new Map(updatedRows.map((row) => [row.id, deserializeDocument(row, true)]));
+  return { documents: documentIds.map((id) => byId.get(id)).filter(Boolean) };
+}
+
 export function updateMapping(userId, id, input) {
   const row = getDocumentRow(userId, id);
   const parsed = jsonSafeParse(row.parsed_data, null);
@@ -299,14 +356,7 @@ export function updateMapping(userId, id, input) {
     if (source && !parsed.sourceFields?.includes(source)) throw new AppError(400, "INVALID_SOURCE_FIELD", `${source} is not a source column in this document.`);
   }
   const mapping = { documentType, gstin: gstin || null, returnPeriod: returnPeriod || null, fieldMap };
-  const updated = applyFieldMapping(parsed, mapping);
-  const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
-  const status = updated.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready";
-  getDb().prepare(`
-    UPDATE documents SET document_type = ?, gstin = ?, return_period = ?, status = ?, record_count = ?,
-      parsed_data = ?, mapping = ?, anomalies = ? WHERE id = ? AND user_id = ?
-  `).run(updated.documentType, updated.gstin, updated.returnPeriod, status, updated.rows.length,
-    JSON.stringify(updated), JSON.stringify(mapping), JSON.stringify(updated.anomalies), id, userId);
+  updateDocumentMappingRow(userId, row, mapping);
   return getDocument(userId, id);
 }
 

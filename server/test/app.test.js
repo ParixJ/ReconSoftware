@@ -88,6 +88,13 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.equal(uploaded.documents.length, 3);
   assert.deepEqual(new Set(uploaded.documents.map((item) => item.documentType)), new Set(["gstr1", "gstr3b", "gstr2b"]));
 
+  const invalidBulkGstinResponse = await fetch(`${base}/documents/gstin`, {
+    method: "PUT", headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ documentIds: uploaded.documents.map((item) => item.id), gstin: "BAD-GSTIN" }),
+  });
+  assert.equal(invalidBulkGstinResponse.status, 400);
+  assert.equal((await invalidBulkGstinResponse.json()).error.code, "INVALID_GSTIN");
+
   const gstr1Document = uploaded.documents.find((item) => item.documentType === "gstr1");
   const originalGstr1Response = await fetch(`${base}/document-org/${gstr1Document.id}`, { headers: { cookie } });
   assert.equal(originalGstr1Response.status, 200);
@@ -124,6 +131,15 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.equal(unmappedUpload.documents[0].status, "needs_mapping");
   assert.equal(unmappedUpload.documents[0].mappingCoverage.viewMode, "prompt");
   assert.deepEqual(unmappedUpload.documents[0].parsed.sourceFields, ["Ledger Ref", "Party Label", "Net Figure", "Tax Figure"]);
+
+  const bulkGstinResponse = await fetch(`${base}/documents/gstin`, {
+    method: "PUT", headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ documentIds: [unmappedId], gstin: "24aexps3034h1z6" }),
+  });
+  assert.equal(bulkGstinResponse.status, 200);
+  const bulkGstin = await bulkGstinResponse.json();
+  assert.equal(bulkGstin.documents.length, 1);
+  assert.equal(bulkGstin.documents[0].gstin, "24AEXPS3034H1Z6");
 
   const unmappedOriginalResponse = await fetch(`${base}/document-org/${unmappedId}`, { headers: { cookie } });
   assert.equal(unmappedOriginalResponse.status, 200);

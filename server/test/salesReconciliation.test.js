@@ -16,7 +16,7 @@ const { parseGstr1Text } = await import("../src/parsers/gstr1.js");
 const { parseGstr3bText } = await import("../src/parsers/gstr3b.js");
 const { normalizeJson } = await import("../src/parsers/normalizers.js");
 const { parseSalesRegisterMatrix } = await import("../src/parsers/salesRegister.js");
-const { updateMapping } = await import("../src/services/documentService.js");
+const { updateDocumentsGstin, updateMapping } = await import("../src/services/documentService.js");
 const { exportReconciliationWorkbook } = await import("../src/services/reconciliationExportService.js");
 const { getReconciliation, listReconciliations, runReconciliation } = await import("../src/services/reconciliationService.js");
 const { strFromU8, unzipSync } = await import("fflate");
@@ -464,6 +464,23 @@ test("rejects reconciliation when no selected document identifies a client GSTIN
     },
   );
   assert.equal(getDb().prepare("SELECT COUNT(*) AS count FROM reconciliations WHERE user_id = ?").get(userId).count, 0);
+
+  assert.throws(
+    () => updateDocumentsGstin(userId, { documentIds, gstin: "BAD-GSTIN" }),
+    (error) => {
+      assert.equal(error.status, 400);
+      assert.equal(error.code, "INVALID_GSTIN");
+      return true;
+    },
+  );
+
+  const bulkUpdate = updateDocumentsGstin(userId, { documentIds, gstin: "29AABFB5678G1Z8" });
+  assert.equal(bulkUpdate.documents.length, 2);
+  assert.ok(bulkUpdate.documents.every((document) => document.gstin === "29AABFB5678G1Z8"));
+
+  const reconciliation = await runReconciliation(userId, { documentIds, amountTolerance: 1, dateToleranceDays: 0 });
+  assert.equal(reconciliation.result.clientGstin, "29AABFB5678G1Z8");
+  assert.equal(reconciliation.result.crossExamination.status, "matched");
 });
 
 test.after(() => {
