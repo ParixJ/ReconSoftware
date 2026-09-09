@@ -1,6 +1,6 @@
 # ReconSoft
 
-ReconSoft is a focused auditor workspace for ingesting GST returns and sales registers, reviewing normalized document data, correcting field mappings, and reconciling books with GSTR-1 and GSTR-3B (plus GSTR-2B ITC checks when selected).
+ReconSoft is a focused auditor workspace for ingesting GST returns and sales registers, reviewing all extracted source fields, correcting reconciliation mappings, and reconciling books with GSTR-1 and GSTR-3B (plus GSTR-2B ITC checks when selected).
 
 ## Run locally
 
@@ -32,6 +32,6 @@ The browser test creates its own auditor account and uploads the fixtures in `sa
 
 Sales-register workbooks may contain heading rows before the ledger header. Dated rows are grouped by return period, and credit notes/credit entries are retained as signed adjustments. Image-only PDFs require OCR before upload.
 
-If extracted columns do not satisfy the fixed reconciliation schema, the document viewer asks whether to render them exactly as extracted or keep the table hidden. The choice is stored with the document and can be changed later.
+The document viewer always renders every field extracted from the original upload. Reconciliation mappings remain a separate fixed schema and use only the columns needed by backend comparisons.
 
 See `docs/ARCHITECTURE.md`, `docs/API_CONTRACTS.md`, `docs/DATABASE_SCHEMA.md`, and `docs/RECONCILIATION_RULES.md` for implementation contracts.
