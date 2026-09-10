@@ -17,6 +17,9 @@ router.get("/export", async (req, res, next) => {
     const workbook = await exportReconciliationWorkbook(req.user.id, {
       clientGstin: req.query.gstin,
       year: req.query.year,
+      fiscalYear: req.query.fiscalYear,
+      filename: req.query.filename,
+      format: req.query.format,
     });
     res.set({
       "Cache-Control": "no-store",

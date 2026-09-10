@@ -171,6 +171,19 @@ p { color: var(--text-secondary); line-height: 1.55; }
 .notice-danger { color: var(--danger); background: var(--danger-subtle-alt); border-color: var(--danger-border-soft); }
 .notice-close { width: 26px; height: 26px; margin: -5px -6px 0 0; color: currentColor; }
 
+.popup-backdrop { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, #000 48%, transparent); }
+.popup { width: min(720px,100%); max-height: min(86vh,900px); display: grid; grid-template-rows: auto minmax(0,1fr) auto; overflow: hidden; background: var(--background); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 20px 70px color-mix(in srgb, #000 30%, transparent); }
+.popup-wide { width: min(1180px,100%); }
+.popup-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.popup-header h2 { margin: 0; font-size: 18px; }
+.popup-header p { margin: 4px 0 0; font-size: 12px; }
+.popup-close { flex: 0 0 auto; }
+.popup-body { min-height: 0; overflow: auto; padding: 18px 20px; }
+.popup-body .period-result { gap: 14px; }
+.popup-body .result-panel, .popup-body .exception-panel { background: var(--background); }
+.popup-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; background: var(--floating-background); border-top: 1px solid var(--border); }
+.export-form { display: grid; gap: 14px; }
+
 .app-loading, .loading-block { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); }
 .topnav { position: sticky; z-index: 20; top: 0; height: 62px; background: var(--nav-background); border-bottom: 1px solid var(--border); }
 .topnav-inner { width: 100%; height: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 36px; padding: 0 clamp(20px, 3vw, 44px); }
@@ -325,13 +338,14 @@ tbody tr:hover td { background: var(--surface-hover); }
 .history-year-field select:disabled { color: var(--text-disabled); background: var(--surface-subtle); }
 .history-empty, .history-prompt { min-height: 190px; }
 .results-section { display: grid; gap: 16px; padding-top: 8px; scroll-margin-top: 82px; }
-.reconciliation-period-tabs { display: flex; gap: 7px; overflow-x: auto; padding: 5px 0 1px; }
-.reconciliation-period-tab { min-width: 178px; display: flex; align-items: center; gap: 9px; padding: 10px 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 7px; text-align: left; }
-.reconciliation-period-tab:hover { color: var(--text); background: var(--surface-subtle); }
-.reconciliation-period-tab-active { color: var(--accent); background: var(--accent-subtle); border-color: var(--accent-border-strong); box-shadow: inset 0 -2px 0 var(--accent); }
-.reconciliation-period-tab > span { display: grid; gap: 2px; }
-.reconciliation-period-tab strong { color: var(--text); font-size: 12px; }
-.reconciliation-period-tab small { font-size: 9px; white-space: nowrap; }
+.monthly-results-panel { overflow: hidden; }
+.monthly-results-scroll { border-top: 1px solid var(--border); }
+.monthly-results-table { min-width: 980px; }
+.monthly-result-row { cursor: pointer; }
+.monthly-result-row:focus-visible td { outline: 2px solid var(--focus); outline-offset: -2px; }
+.month-cell { display: block; color: var(--text); }
+.month-cell + small { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 10px; }
+.monthly-files-cell { min-width: 220px; color: var(--text-secondary); font-size: 11px; }
 .period-result { display: grid; gap: 16px; }
 .period-comparison-empty { min-height: 150px; border-top: 1px solid var(--border); }
 .results-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 6px 2px; }
@@ -433,6 +447,11 @@ tbody tr:hover td { background: var(--surface-hover); }
   .form-grid { grid-template-columns: 1fr; }
   .mapping-actions { align-items: stretch; flex-direction: column; }
   .mapping-actions > div, .mapping-actions .button { flex: 1; }
+  .popup-backdrop { align-items: start; padding: 12px; }
+  .popup { max-height: calc(100vh - 24px); }
+  .popup-header, .popup-body, .popup-footer { padding-right: 14px; padding-left: 14px; }
+  .popup-footer { align-items: stretch; flex-direction: column-reverse; }
+  .popup-footer .button { width: 100%; }
 }
 
 @media (max-width: 480px) {

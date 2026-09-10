@@ -32,5 +32,8 @@ export const documentsApi = {
 export const reconciliationApi = {
   list: () => api.get("/reconciliations"),
   run: (input) => api.post("/reconciliations", input),
-  exportWorkbook: (gstin, year) => api.get("/reconciliations/export", { params: { gstin, year }, responseType: "blob" }),
+  exportWorkbook: (gstin, input) => {
+    const params = typeof input === "string" ? { gstin, year: input } : { gstin, ...(input || {}) };
+    return api.get("/reconciliations/export", { params, responseType: "blob" });
+  },
 };

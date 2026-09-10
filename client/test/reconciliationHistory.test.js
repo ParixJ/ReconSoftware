@@ -32,7 +32,7 @@ test("groups reconciliation periods by client and year and keeps the latest mont
   assert.equal(history[clientB]["2025"][0].clientGstin, clientB);
 });
 
-test("builds one year report while preserving monthly tabs and aggregate metrics", () => {
+test("builds one year report while preserving monthly rows and aggregate metrics", () => {
   const gstin = "24AEXPS3034H1Z6";
   const periods = [
     { ...periodResult("042025", gstin, 4), sourceReconciliationId: "april", reconciledAt: "2025-05-01T00:00:00.000Z" },

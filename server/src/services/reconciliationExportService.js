@@ -49,15 +49,50 @@ function clientGstinForPeriod(periodResult) {
   return gstins.length === 1 ? gstins[0] : null;
 }
 
-async function latestPeriodDocuments(userId, clientGstin, year) {
+function fiscalPeriods(fiscalYear) {
+  const match = String(fiscalYear || "").trim().match(/^(\d{4})-(\d{4})$/);
+  if (!match) {
+    throw new AppError(400, "INVALID_EXPORT_FISCAL_YEAR", "Enter fiscal year in YYYY-YYYY format.");
+  }
+  const startYear = Number(match[1]);
+  const endYear = Number(match[2]);
+  if (endYear !== startYear + 1) {
+    throw new AppError(400, "INVALID_EXPORT_FISCAL_YEAR", "Fiscal year must cover consecutive years.");
+  }
+  return {
+    label: `${startYear}-${endYear}`,
+    periods: MONTHS.map(([month], index) => `${month}${index < 9 ? startYear : endYear}`),
+  };
+}
+
+function calendarYearPeriods(year) {
+  return {
+    label: year,
+    periods: MONTHS.map(([month]) => `${month}${year}`),
+  };
+}
+
+function safeExportFilename(value, clientGstin, periodLabel) {
+  const fallback = `GST_Reconciliation_${clientGstin}_${periodLabel}`;
+  const base = String(value || fallback)
+    .trim()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .slice(0, 140) || fallback;
+  return `${base}.xlsx`;
+}
+
+async function latestPeriodDocuments(userId, clientGstin, returnPeriods) {
   const reconciliations = await listReconciliations(userId);
+  const requestedPeriods = new Set(returnPeriods);
   const selectedPeriods = new Map();
   const documentCache = new Map();
 
   for (const reconciliation of reconciliations) {
     for (const periodResult of reconciliation.result?.periods || []) {
       const returnPeriod = periodResult.returnPeriod;
-      if (!returnPeriod?.endsWith(year) || selectedPeriods.has(returnPeriod)) continue;
+      if (!requestedPeriods.has(returnPeriod) || selectedPeriods.has(returnPeriod)) continue;
       if (clientGstinForPeriod(periodResult) !== clientGstin) continue;
 
       const cacheKey = [...reconciliation.documentIds].sort().join(":");
@@ -202,17 +237,27 @@ async function populateTemplate(rows) {
 
 export async function exportReconciliationWorkbook(userId, input) {
   const clientGstin = exactGstin(input.clientGstin);
+  const format = String(input.format || "excel").trim().toLowerCase();
+  const fiscalYear = String(input.fiscalYear || "").trim();
   const year = String(input.year || "").trim();
   if (!clientGstin) throw new AppError(400, "INVALID_EXPORT_GSTIN", "Choose a valid client GSTIN to export.");
-  if (!/^\d{4}$/.test(year)) throw new AppError(400, "INVALID_EXPORT_YEAR", "Choose a four-digit reconciliation year to export.");
+  if (format !== "excel") throw new AppError(400, "UNSUPPORTED_EXPORT_FORMAT", "Only Excel export is currently supported.");
 
-  const periodDocuments = await latestPeriodDocuments(userId, clientGstin, year);
-  if (!periodDocuments.size) {
-    throw new AppError(404, "RECONCILIATION_EXPORT_NOT_FOUND", `No reconciliations were found for ${clientGstin} in ${year}.`);
+  let scope;
+  if (fiscalYear) {
+    scope = fiscalPeriods(fiscalYear);
+  } else {
+    if (!/^\d{4}$/.test(year)) throw new AppError(400, "INVALID_EXPORT_YEAR", "Choose a four-digit reconciliation year to export.");
+    scope = calendarYearPeriods(year);
   }
-  const rows = MONTHS.map(([month]) => exportRow(`${month}${year}`, periodDocuments.get(`${month}${year}`)));
+
+  const periodDocuments = await latestPeriodDocuments(userId, clientGstin, scope.periods);
+  if (!periodDocuments.size) {
+    throw new AppError(404, "RECONCILIATION_EXPORT_NOT_FOUND", `No reconciliations were found for ${clientGstin} in ${scope.label}.`);
+  }
+  const rows = scope.periods.map((returnPeriod) => exportRow(returnPeriod, periodDocuments.get(returnPeriod)));
   return {
     buffer: await populateTemplate(rows),
-    filename: `GST_Reconciliation_${clientGstin}_${year}.xlsx`,
+    filename: safeExportFilename(input.filename || input.documentName, clientGstin, scope.label),
   };
 }

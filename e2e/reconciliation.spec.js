@@ -150,8 +150,12 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByLabel("Return year")).toHaveValue("2026");
   await expect(page.getByText("Review required").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: /Mar 2026/ })).toBeVisible();
-  await expect(page.getByText("20 / 23")).toBeVisible();
-  await expect(page.getByText("Suggested review sequence")).toBeVisible();
+  const marchRow = page.getByRole("table", { name: "Monthly reconciliation summary" }).getByRole("row", { name: /Mar 2026/ });
+  await expect(marchRow).toContainText("20 / 23");
+  await marchRow.click();
+  const marchDialog = page.getByRole("dialog", { name: /Mar 2026 reconciliation details/ });
+  await expect(marchDialog.getByText("Suggested review sequence")).toBeVisible();
+  await marchDialog.getByRole("button", { name: "Close popup" }).click();
   await page.screenshot({ path: path.join(root, "test-results/reconsoft-flow.png"), fullPage: true });
 
   await page.getByRole("link", { name: "Home" }).click();
@@ -175,7 +179,7 @@ test("auditor uploads three returns, reviews mapping, and reconciles", async ({ 
   await expect(page.getByText("No documents uploaded")).toBeVisible();
 });
 
-test("auditor reconciles multiple return months in one combined tab per period", async ({ page }) => {
+test("auditor reconciles multiple return months in one row per period", async ({ page }) => {
   const gstin = "24AEXPS3034H1Z6";
   const email = `period-auditor-${Date.now()}@example.test`;
   const gstr1 = (fp, invoiceDate, taxableValue, tax) => ({
@@ -222,15 +226,16 @@ test("auditor reconciles multiple return months in one combined tab per period",
 
   await expect(page.getByRole("heading", { name: /2 return periods/ })).toBeVisible();
   await expect(page.getByText("unselected-gstinless-gstr1-april-2025.json")).toHaveCount(0);
-  const aprilTab = page.getByRole("tab", { name: /Apr 2025/ });
-  const mayTab = page.getByRole("tab", { name: /May 2025/ });
-  await expect(aprilTab).toBeVisible();
-  await expect(mayTab).toBeVisible();
-  await expect(aprilTab).toHaveAttribute("aria-selected", "true");
-  await mayTab.click();
-  await expect(mayTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText("Files used for May 2025:")).toBeVisible();
-  await expect(page.getByRole("tablist", { name: "Reconciliation periods" }).getByRole("tab")).toHaveCount(2);
+  const monthlySummary = page.getByRole("table", { name: "Monthly reconciliation summary" });
+  const aprilRow = monthlySummary.getByRole("row", { name: /Apr 2025/ });
+  const mayRow = monthlySummary.getByRole("row", { name: /May 2025/ });
+  await expect(aprilRow).toBeVisible();
+  await expect(mayRow).toBeVisible();
+  await mayRow.click();
+  const mayDialog = page.getByRole("dialog", { name: /May 2025 reconciliation details/ });
+  await expect(mayDialog.getByText("Files used for May 2025:")).toBeVisible();
+  await mayDialog.getByRole("button", { name: "Close popup" }).click();
+  await expect(page.getByRole("tablist", { name: "Reconciliation periods" })).toHaveCount(0);
 
   await page.getByRole("link", { name: "Home" }).click();
   await page.locator('input[type="file"]').setInputFiles([
@@ -247,7 +252,8 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await expect(yearSelect).toHaveValue("2026");
   await expect(yearSelect.locator("option")).toHaveText(["Select year", "2026", "2025"]);
   await yearSelect.selectOption("2025");
-  await expect(page.getByRole("tablist", { name: "Reconciliation periods" }).getByRole("tab")).toHaveCount(2);
+  await expect(page.getByRole("table", { name: "Monthly reconciliation summary" }).getByRole("row", { name: /Apr 2025/ })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Monthly reconciliation summary" }).getByRole("row", { name: /May 2025/ })).toBeVisible();
   await gstinSelect.selectOption("");
   await gstinSearch.fill("AEXPS3034");
   await expect(gstinSelect.locator("option")).toHaveText(["Select client GSTIN", gstin]);
@@ -257,8 +263,14 @@ test("auditor reconciles multiple return months in one combined tab per period",
   await expect(page).toHaveURL(new RegExp(`/reconciliations\\?gstin=${gstin}&year=2026`));
   await expect(page.getByRole("heading", { name: /Apr 2026/ })).toBeVisible();
 
-  const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export to Excel" }).click();
+  const exportDialog = page.getByRole("dialog", { name: "Export reconciliation" });
+  await expect(exportDialog).toBeVisible();
+  await exportDialog.getByLabel("Document name").fill(`GST_Reconciliation_${gstin}_2026`);
+  await exportDialog.getByLabel("Document file format").selectOption("excel");
+  await exportDialog.getByLabel("Fiscal year").fill("2026-2027");
+  const downloadPromise = page.waitForEvent("download");
+  await exportDialog.getByRole("button", { name: "Download" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe(`GST_Reconciliation_${gstin}_2026.xlsx`);
   const workbookFiles = unzipSync(new Uint8Array(fs.readFileSync(await download.path())));

@@ -108,6 +108,16 @@ test("reconciles the selected sales-register period with GSTR-1 and GSTR-3B", as
   const outputTaxSheet = await readSheet(workbook.buffer, "Output Tax");
   assert.deepEqual(taxableSheet[2].slice(0, 14), ["April", 860000, 0, 0, 860000, 860000, 860000, 860000, 0, 0, 860000, 1014800, 0, 0]);
   assert.deepEqual(outputTaxSheet[2].slice(0, 15), ["April", 45000, 54900, 54900, 154800, 45000, 54900, 54900, 154800, 45000, 54900, 54900, 154800, 0, 0]);
+
+  const fiscalWorkbook = await exportReconciliationWorkbook(userId, {
+    clientGstin: "29AABFB5678G1Z8",
+    fiscalYear: "2025-2026",
+    filename: "April FY Export",
+    format: "excel",
+  });
+  const fiscalTaxableXml = strFromU8(unzipSync(new Uint8Array(fiscalWorkbook.buffer))["xl/worksheets/sheet1.xml"]);
+  assert.equal(fiscalWorkbook.filename, "April FY Export.xlsx");
+  assert.equal(workbookCell(fiscalTaxableXml, "B3"), 860000);
 });
 
 test("exports the template's GSTR-1 credit-note and books columns with the expected signs", async () => {
