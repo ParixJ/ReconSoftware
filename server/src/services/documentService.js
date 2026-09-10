@@ -303,7 +303,6 @@ export async function deleteDocuments(userId, inputIds) {
 }
 
 export function updateDocumentsGstin(userId, input) {
-  console.log(input);  
   const documentIds = bulkDocumentIds(input?.documentIds, "update");
   const gstin = normalizedBulkGstin(input?.gstin);
   const placeholders = documentIds.map(() => "?").join(", ");
