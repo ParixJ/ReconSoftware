@@ -1,15 +1,18 @@
+import { ERROR_CODES } from "../../api/errorCodes.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { renameSync } from "node:fs";
 import path from "node:path";
 import { config } from "../../config.js";
 import { getDb } from "../../db/database.js";
+import { writeTransaction } from "../../db/transactions.js";
 import { AppError } from "../../errors.js";
 import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../../api/contracts.js";
 import { applyFieldMapping } from "../parsers/normalizers.js";
 import { parseUploadedFile } from "../parsers/index.js";
 import { extractOriginalDocument } from "../parsers/originalDocument.js";
 import { GSTR1_PARSER_VERSION } from "../parsers/gstr1.js";
-import { GSTIN_PATTERN, jsonSafeParse } from "../parsers/utils.js";
+import { GSTIN_PATTERN, isValidReturnPeriod, jsonSafeParse, normalizePeriod } from "../parsers/utils.js";
 
 const FIELD_LABELS = Object.freeze({
   counterpartyGstin: "Counterparty GSTIN",
@@ -106,8 +109,7 @@ function insertDocument(userId, file, parsed, original) {
     created_at: new Date().toISOString(),
   };
   const db = getDb();
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  writeTransaction(db, () => {
     db.prepare(`
       INSERT INTO documents (
         id, user_id, original_name, stored_name, mime_type, file_type, document_type,
@@ -122,11 +124,7 @@ function insertDocument(userId, file, parsed, original) {
         document_id, user_id, field_names, header_row_number, extraction_version, created_at, updated_at
       ) VALUES (?, ?, ?, ?, 1, ?, ?)
     `).run(row.id, userId, JSON.stringify(original.fields), original.headerRowNumber, row.created_at, row.created_at);
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
   return deserializeDocument(row, true);
 }
 
@@ -134,26 +132,43 @@ function storedFilePath(row) {
   const filePath = path.resolve(config.uploadDir, row.stored_name);
   const relativePath = path.relative(config.uploadDir, filePath);
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new AppError(500, "INVALID_STORED_FILE_PATH", "The stored document path is invalid.");
+    throw new AppError(500, ERROR_CODES.INVALID_STORED_FILE_PATH, "The stored document path is invalid.");
   }
   return filePath;
 }
 
-async function removeStoredDocumentFile(row) {
+function stageStoredDocumentFile(row) {
+  const original = storedFilePath(row);
+  const staged = `${original}.deleting-${crypto.randomUUID()}`;
   try {
-    await fs.unlink(storedFilePath(row));
+    renameSync(original, staged);
+    return { original, staged };
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (error.code === "ENOENT") return null;
+    throw new AppError(500, ERROR_CODES.DOCUMENT_FILE_DELETE_FAILED, "The uploaded file could not be removed from storage.");
   }
+}
+
+function restoreStagedFiles(stagedFiles) {
+  for (const file of stagedFiles) renameSync(file.staged, file.original);
+}
+
+async function finishFileDeletion(stagedFiles) {
+  // SQLite cannot commit filesystem changes. Staging permits restoration on rollback.
+  // A process crash after commit may leave staged files for administrative cleanup.
+  await Promise.all(stagedFiles.map(async (file) => {
+    try { await fs.unlink(file.staged); }
+    catch (error) { if (error.code !== "ENOENT") console.error("Committed document deletion left a staged file:", file.staged, error); }
+  }));
 }
 
 function bulkDocumentIds(input, action = "process") {
   if (!Array.isArray(input) || input.length < 1 || input.length > 100) {
-    throw new AppError(400, "INVALID_DOCUMENT_SELECTION", `Select between 1 and 100 documents to ${action}.`);
+    throw new AppError(400, ERROR_CODES.INVALID_DOCUMENT_SELECTION, `Select between 1 and 100 documents to ${action}.`);
   }
   const documentIds = [...new Set(input.map((id) => String(id || "").trim()))];
   if (documentIds.some((id) => !id)) {
-    throw new AppError(400, "INVALID_DOCUMENT_SELECTION", "Every selected document must have a valid ID.");
+    throw new AppError(400, ERROR_CODES.INVALID_DOCUMENT_SELECTION, "Every selected document must have a valid ID.");
   }
   return documentIds;
 }
@@ -161,14 +176,14 @@ function bulkDocumentIds(input, action = "process") {
 function normalizedBulkGstin(input) {
   const gstin = String(input || "").trim().toUpperCase();
   if (!EXACT_GSTIN_PATTERN.test(gstin)) {
-    throw new AppError(400, "INVALID_GSTIN", "Enter a valid 15-character GSTIN before applying it to selected documents.");
+    throw new AppError(400, ERROR_CODES.INVALID_GSTIN, "Enter a valid 15-character GSTIN before applying it to selected documents.");
   }
   return gstin;
 }
 
 function updateDocumentMappingRow(userId, row, mapping) {
   const parsed = jsonSafeParse(row.parsed_data, null);
-  if (!parsed) throw new AppError(422, "PARSED_DATA_MISSING", "The parsed document data is unavailable. Upload the source again.");
+  if (!parsed) throw new AppError(422, ERROR_CODES.PARSED_DATA_MISSING, "The parsed document data is unavailable. Upload the source again.");
 
   const updated = applyFieldMapping(parsed, mapping);
   const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
@@ -191,30 +206,35 @@ async function refreshParsedDocument(row) {
   if (!gstr1PdfNeedsRefresh(row, current)) return row;
 
   const reparsed = await parseUploadedFile(storedFilePath(row), row.original_name, row.mime_type);
-  const mapping = jsonSafeParse(row.mapping, {
-    documentType: row.document_type,
-    gstin: row.gstin,
-    returnPeriod: row.return_period,
-    fieldMap: {},
+  return writeTransaction(getDb(), () => {
+    // Re-read after extraction so a concurrent mapping change is not overwritten.
+    row = getDocumentRow(row.user_id, row.id);
+    if (!gstr1PdfNeedsRefresh(row, jsonSafeParse(row.parsed_data, null))) return row;
+    const mapping = jsonSafeParse(row.mapping, {
+      documentType: row.document_type,
+      gstin: row.gstin,
+      returnPeriod: row.return_period,
+      fieldMap: {},
+    });
+    const updated = applyFieldMapping(reparsed, mapping);
+    const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
+    const status = updated.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready";
+    getDb().prepare(`
+      UPDATE documents SET document_type = ?, gstin = ?, return_period = ?, status = ?, record_count = ?,
+        parsed_data = ?, anomalies = ? WHERE id = ? AND user_id = ?
+    `).run(
+      updated.documentType,
+      updated.gstin,
+      updated.returnPeriod,
+      status,
+      updated.rows.length,
+      JSON.stringify(updated),
+      JSON.stringify(updated.anomalies),
+      row.id,
+      row.user_id,
+    );
+    return getDocumentRow(row.user_id, row.id);
   });
-  const updated = applyFieldMapping(reparsed, mapping);
-  const coverage = mappingCoverage(updated, mapping, updated.documentType, row.view_preference);
-  const status = updated.anomalies.some((item) => item.severity === "error") || !coverage.canRenderNormalized ? "needs_mapping" : "ready";
-  getDb().prepare(`
-    UPDATE documents SET document_type = ?, gstin = ?, return_period = ?, status = ?, record_count = ?,
-      parsed_data = ?, anomalies = ? WHERE id = ? AND user_id = ?
-  `).run(
-    updated.documentType,
-    updated.gstin,
-    updated.returnPeriod,
-    status,
-    updated.rows.length,
-    JSON.stringify(updated),
-    JSON.stringify(updated.anomalies),
-    row.id,
-    row.user_id,
-  );
-  return getDocumentRow(row.user_id, row.id);
 }
 
 export async function createDocuments(userId, files) {
@@ -226,12 +246,26 @@ export async function createDocuments(userId, files) {
         headerRowNumber: parsed.headerRowNumber,
         parsed,
       });
-      return { document: insertDocument(userId, file, parsed, original) };
+      return { file, parsed, original };
     } catch (error) {
       await fs.unlink(file.path).catch(() => {});
-      return { error: { filename: file.originalname, code: error.code || "PARSE_FAILED", message: error.message || "The document could not be parsed." } };
+      return { error: { filename: file.originalname, code: error instanceof AppError ? error.code : ERROR_CODES.PARSE_FAILED, message: error instanceof AppError ? error.message : "The document could not be parsed." } };
     }
   }));
+  try {
+    writeTransaction(getDb(), () => {
+      if (getDocumentsCount(userId) + files.length > 100) {
+        throw new AppError(400, ERROR_CODES.DOCUMENT_STORAGE_LIMIT_EXCEEDED, "File storage limit exceeded");
+      }
+      for (const outcome of outcomes) {
+        if (!outcome.error) outcome.document = insertDocument(userId, outcome.file, outcome.parsed, outcome.original);
+      }
+    });
+  } catch (error) {
+    // No batch rows committed; remove the corresponding temporary uploads.
+    await Promise.all(files.map((file) => fs.unlink(file.path).catch(() => {})));
+    throw error;
+  }
   return {
     documents: outcomes.flatMap((outcome) => outcome.document ? [outcome.document] : []),
     errors: outcomes.flatMap((outcome) => outcome.error ? [outcome.error] : []),
@@ -242,9 +276,13 @@ export function listDocuments(userId) {
   return getDb().prepare("SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC").all(userId).map((row) => deserializeDocument(row));
 }
 
+export function getDocumentsCount(userId){
+  return getDb().prepare('SELECT COUNT(*) AS count FROM documents WHERE user_id=?').get(userId).count;
+}
+
 export function getDocumentRow(userId, id) {
   const row = getDb().prepare("SELECT * FROM documents WHERE id = ? AND user_id = ?").get(id, userId);
-  if (!row) throw new AppError(404, "DOCUMENT_NOT_FOUND", "This document does not exist or is not available to your account.");
+  if (!row) throw new AppError(404, ERROR_CODES.DOCUMENT_NOT_FOUND, "This document does not exist or is not available to your account.");
   return row;
 }
 
@@ -257,63 +295,67 @@ export async function getCurrentDocument(userId, id) {
 }
 
 export async function deleteDocument(userId, id) {
-  const row = getDocumentRow(userId, id);
+  const stagedFiles = [];
   try {
-    await removeStoredDocumentFile(row);
+    writeTransaction(getDb(), () => {
+      const row = getDocumentRow(userId, id);
+      const staged = stageStoredDocumentFile(row);
+      if (staged) stagedFiles.push(staged);
+      getDb().prepare("DELETE FROM documents WHERE id = ? AND user_id = ?").run(id, userId);
+    });
   } catch (error) {
-    throw new AppError(500, "DOCUMENT_FILE_DELETE_FAILED", "The uploaded file could not be removed from storage.");
+    restoreStagedFiles(stagedFiles);
+    throw error;
   }
-
-  getDb().prepare("DELETE FROM documents WHERE id = ? AND user_id = ?").run(id, userId);
+  await finishFileDeletion(stagedFiles);
 }
 
 export async function deleteDocuments(userId, inputIds) {
   const documentIds = bulkDocumentIds(inputIds, "delete");
-  const placeholders = documentIds.map(() => "?").join(", ");
-  const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
-  if (rows.length !== documentIds.length) {
-    throw new AppError(404, "DOCUMENTS_NOT_FOUND", "One or more selected documents do not exist or are not available to your account.");
+  const stagedFiles = [];
+  let result;
+  try {
+    result = writeTransaction(getDb(), () => {
+      const placeholders = documentIds.map(() => "?").join(", ");
+      const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
+      if (rows.length !== documentIds.length) {
+        throw new AppError(404, ERROR_CODES.DOCUMENTS_NOT_FOUND, "One or more selected documents do not exist or are not available to your account.");
+      }
+      const deletedIds = [], errors = [];
+      for (const row of rows) {
+        try {
+          const staged = stageStoredDocumentFile(row);
+          if (staged) stagedFiles.push(staged);
+          deletedIds.push(row.id);
+        } catch (error) {
+          if (!(error instanceof AppError) || error.code !== ERROR_CODES.DOCUMENT_FILE_DELETE_FAILED) throw error;
+          errors.push({ id: row.id, originalName: row.original_name, code: error.code, message: error.message });
+        }
+      }
+      if (deletedIds.length) {
+        const deletedPlaceholders = deletedIds.map(() => "?").join(", ");
+        getDb().prepare(`DELETE FROM documents WHERE user_id = ? AND id IN (${deletedPlaceholders})`).run(userId, ...deletedIds);
+      }
+      return { deletedIds, errors };
+    });
+  } catch (error) {
+    restoreStagedFiles(stagedFiles);
+    throw error;
   }
-
-  const outcomes = await Promise.all(rows.map(async (row) => {
-    try {
-      await removeStoredDocumentFile(row);
-      return { row };
-    } catch {
-      return {
-        error: {
-          id: row.id,
-          originalName: row.original_name,
-          code: "DOCUMENT_FILE_DELETE_FAILED",
-          message: "The uploaded file could not be removed from storage.",
-        },
-      };
-    }
-  }));
-  const deletedRows = outcomes.flatMap((outcome) => outcome.row ? [outcome.row] : []);
-  if (deletedRows.length) {
-    const deletedPlaceholders = deletedRows.map(() => "?").join(", ");
-    getDb().prepare(`DELETE FROM documents WHERE user_id = ? AND id IN (${deletedPlaceholders})`)
-      .run(userId, ...deletedRows.map((row) => row.id));
-  }
-  return {
-    deletedIds: deletedRows.map((row) => row.id),
-    errors: outcomes.flatMap((outcome) => outcome.error ? [outcome.error] : []),
-  };
+  await finishFileDeletion(stagedFiles);
+  return result;
 }
 
 export function updateDocumentsGstin(userId, input) {
-  const documentIds = bulkDocumentIds(input?.documentIds, "update");
-  const gstin = normalizedBulkGstin(input?.gstin);
-  const placeholders = documentIds.map(() => "?").join(", ");
-  const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
-  if (rows.length !== documentIds.length) {
-    throw new AppError(404, "DOCUMENTS_NOT_FOUND", "One or more selected documents do not exist or are not available to your account.");
-  }
+  return writeTransaction(getDb(), () => {
+    const documentIds = bulkDocumentIds(input?.documentIds, "update");
+    const gstin = normalizedBulkGstin(input?.gstin);
+    const placeholders = documentIds.map(() => "?").join(", ");
+    const rows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
+    if (rows.length !== documentIds.length) {
+      throw new AppError(404, ERROR_CODES.DOCUMENTS_NOT_FOUND, "One or more selected documents do not exist or are not available to your account.");
+    }
 
-  const db = getDb();
-  db.exec("BEGIN IMMEDIATE");
-  try {
     for (const row of rows) {
       const current = jsonSafeParse(row.mapping, {
         documentType: row.document_type,
@@ -323,50 +365,50 @@ export function updateDocumentsGstin(userId, input) {
       });
       updateDocumentMappingRow(userId, row, { ...current, gstin });
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
 
-  const updatedRows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
-  const byId = new Map(updatedRows.map((row) => [row.id, deserializeDocument(row, true)]));
-  return { documents: documentIds.map((id) => byId.get(id)).filter(Boolean) };
+    const updatedRows = getDb().prepare(`SELECT * FROM documents WHERE user_id = ? AND id IN (${placeholders})`).all(userId, ...documentIds);
+    const byId = new Map(updatedRows.map((row) => [row.id, deserializeDocument(row, true)]));
+    return { documents: documentIds.map((id) => byId.get(id)).filter(Boolean) };
+  });
 }
 
 export function updateMapping(userId, id, input) {
-  const row = getDocumentRow(userId, id);
-  const parsed = jsonSafeParse(row.parsed_data, null);
-  if (!parsed) throw new AppError(422, "PARSED_DATA_MISSING", "The parsed document data is unavailable. Upload the source again.");
+  return writeTransaction(getDb(), () => {
+    const row = getDocumentRow(userId, id);
+    const parsed = jsonSafeParse(row.parsed_data, null);
+    if (!parsed) throw new AppError(422, ERROR_CODES.PARSED_DATA_MISSING, "The parsed document data is unavailable. Upload the source again.");
 
-  const requestedDocumentType = String(input.documentType || "unknown");
-  const documentType = requestedDocumentType.toLowerCase().replace(/_/g, "") === "salesregister"
-    ? "salesRegister"
-    : requestedDocumentType.toLowerCase();
-  if (!DOCUMENT_TYPES.includes(documentType)) throw new AppError(400, "INVALID_DOCUMENT_TYPE", "Choose a supported GST return type.");
-  const gstin = String(input.gstin || "").trim().toUpperCase();
-  if (gstin && gstin.length > 15) throw new AppError(400, "INVALID_GSTIN", "GSTIN cannot be longer than 15 characters.");
-  const returnPeriod = String(input.returnPeriod || "").replace(/\D/g, "");
-  if (returnPeriod && !/^(0[1-9]|1[0-2])\d{4}$/.test(returnPeriod)) throw new AppError(400, "INVALID_PERIOD", "Return period must use MMYYYY format.");
+    const requestedDocumentType = String(input.documentType || "unknown");
+    const documentType = requestedDocumentType.toLowerCase().replace(/_/g, "") === "salesregister"
+      ? "salesRegister"
+      : requestedDocumentType.toLowerCase();
+    if (!DOCUMENT_TYPES.includes(documentType)) throw new AppError(400, ERROR_CODES.INVALID_DOCUMENT_TYPE, "Choose a supported GST return type.");
+    const gstin = String(input.gstin || "").trim().toUpperCase();
+    if (gstin && gstin.length > 15) throw new AppError(400, ERROR_CODES.INVALID_GSTIN, "GSTIN cannot be longer than 15 characters.");
+    const returnPeriod = normalizePeriod(input.returnPeriod);
+    if (returnPeriod && !isValidReturnPeriod(returnPeriod)) throw new AppError(400, ERROR_CODES.INVALID_PERIOD, "Return period must use MMYYYY or MMYYYY-MMYYYY format.");
 
-  const fieldMap = input.fieldMap && typeof input.fieldMap === "object" ? input.fieldMap : {};
-  for (const [canonical, source] of Object.entries(fieldMap)) {
-    if (!CANONICAL_FIELDS.includes(canonical)) throw new AppError(400, "INVALID_MAPPING_FIELD", `${canonical} is not a supported reconciliation field.`);
-    if (source && !parsed.sourceFields?.includes(source)) throw new AppError(400, "INVALID_SOURCE_FIELD", `${source} is not a source column in this document.`);
-  }
-  const mapping = { documentType, gstin: gstin || null, returnPeriod: returnPeriod || null, fieldMap };
-  updateDocumentMappingRow(userId, row, mapping);
-  return getDocument(userId, id);
+    const fieldMap = input.fieldMap && typeof input.fieldMap === "object" ? input.fieldMap : {};
+    for (const [canonical, source] of Object.entries(fieldMap)) {
+      if (!CANONICAL_FIELDS.includes(canonical)) throw new AppError(400, ERROR_CODES.INVALID_MAPPING_FIELD, `${canonical} is not a supported reconciliation field.`);
+      if (source && !parsed.sourceFields?.includes(source)) throw new AppError(400, ERROR_CODES.INVALID_SOURCE_FIELD, `${source} is not a source column in this document.`);
+    }
+    const mapping = { documentType, gstin: gstin || null, returnPeriod: returnPeriod || null, fieldMap };
+    updateDocumentMappingRow(userId, row, mapping);
+    return getDocument(userId, id);
+  });
 }
 
 export function updateViewPreference(userId, id, input) {
-  getDocumentRow(userId, id);
-  const mode = String(input.mode || "").toLowerCase();
-  if (!["original", "hidden"].includes(mode)) {
-    throw new AppError(400, "INVALID_VIEW_PREFERENCE", "Choose whether to render the original extracted columns or keep the table hidden.");
-  }
-  getDb().prepare("UPDATE documents SET view_preference = ? WHERE id = ? AND user_id = ?").run(mode, id, userId);
-  return getDocument(userId, id);
+  return writeTransaction(getDb(), () => {
+    getDocumentRow(userId, id);
+    const mode = String(input.mode || "").toLowerCase();
+    if (!["original", "hidden"].includes(mode)) {
+      throw new AppError(400, ERROR_CODES.INVALID_VIEW_PREFERENCE, "Choose whether to render the original extracted columns or keep the table hidden.");
+    }
+    getDb().prepare("UPDATE documents SET view_preference = ? WHERE id = ? AND user_id = ?").run(mode, id, userId);
+    return getDocument(userId, id);
+  });
 }
 
 export async function rowsForReconciliation(userId, ids) {

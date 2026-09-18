@@ -1,6 +1,8 @@
+import { ERROR_CODES } from "../../api/errorCodes.js";
 import path from "node:path";
 import { config } from "../../config.js";
 import { getDb } from "../../db/database.js";
+import { writeTransaction } from "../../db/transactions.js";
 import { AppError } from "../../errors.js";
 import { extractOriginalDocument } from "../parsers/originalDocument.js";
 import { jsonSafeParse } from "../parsers/utils.js";
@@ -10,7 +12,7 @@ function storedFilePath(row) {
   const filePath = path.resolve(config.uploadDir, row.stored_name);
   const relativePath = path.relative(config.uploadDir, filePath);
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new AppError(500, "INVALID_STORED_FILE_PATH", "The stored document path is invalid.");
+    throw new AppError(500, ERROR_CODES.INVALID_STORED_FILE_PATH, "The stored document path is invalid.");
   }
   return filePath;
 }
@@ -51,8 +53,8 @@ function saveMetadata(row, fields, headerRowNumber, existing) {
 
 export async function getOriginalDocument(userId, id) {
   const db = getDb();
-  const row = db.prepare("SELECT * FROM documents WHERE id = ? AND user_id = ?").get(id, userId);
-  if (!row) throw new AppError(404, "DOCUMENT_NOT_FOUND", "This document does not exist or is not available to your account.");
+  let row = db.prepare("SELECT * FROM documents WHERE id = ? AND user_id = ?").get(id, userId);
+  if (!row) throw new AppError(404, ERROR_CODES.DOCUMENT_NOT_FOUND, "This document does not exist or is not available to your account.");
 
   const metadata = db.prepare("SELECT * FROM document_org WHERE document_id = ? AND user_id = ?").get(id, userId);
   let extracted;
@@ -63,15 +65,25 @@ export async function getOriginalDocument(userId, id) {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(422, "ORIGINAL_DOCUMENT_EXTRACTION_FAILED", "The original document fields could not be extracted. Upload the source file again.");
+    throw new AppError(422, ERROR_CODES.ORIGINAL_DOCUMENT_EXTRACTION_FAILED, "The original document fields could not be extracted. Upload the source file again.");
   }
 
-  const storedFields = jsonSafeParse(metadata?.field_names, []);
-  const fields = mergeFields(Array.isArray(storedFields) ? storedFields : [], extracted.fields || []);
-  if (!metadata
-    || JSON.stringify(fields) !== JSON.stringify(storedFields)
-    || metadata.header_row_number !== extracted.headerRowNumber) {
-    saveMetadata(row, fields, extracted.headerRowNumber, metadata);
+  const originalFields = jsonSafeParse(metadata?.field_names, []);
+  let fields = mergeFields(Array.isArray(originalFields) ? originalFields : [], extracted.fields || []);
+  if (!metadata || JSON.stringify(fields) !== JSON.stringify(originalFields) || metadata.header_row_number !== extracted.headerRowNumber) {
+    fields = writeTransaction(db, () => {
+      row = db.prepare("SELECT * FROM documents WHERE id = ? AND user_id = ?").get(id, userId);
+      if (!row) throw new AppError(404, ERROR_CODES.DOCUMENT_NOT_FOUND, "This document does not exist or is not available to your account.");
+      const currentMetadata = db.prepare("SELECT * FROM document_org WHERE document_id = ? AND user_id = ?").get(id, userId);
+      const storedFields = jsonSafeParse(currentMetadata?.field_names, []);
+      const fields = mergeFields(Array.isArray(storedFields) ? storedFields : [], extracted.fields || []);
+      if (!currentMetadata
+        || JSON.stringify(fields) !== JSON.stringify(storedFields)
+        || currentMetadata.header_row_number !== extracted.headerRowNumber) {
+        saveMetadata(row, fields, extracted.headerRowNumber, currentMetadata);
+      }
+      return fields;
+    });
   }
 
   const rows = (extracted.rows || []).map((sourceRow) => Object.fromEntries(
@@ -87,4 +99,3 @@ export async function getOriginalDocument(userId, id) {
     },
   };
 }
-

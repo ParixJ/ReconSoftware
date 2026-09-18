@@ -1,3 +1,4 @@
+import { ERROR_CODES } from "../../api/errorCodes.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { Router } from "express";
@@ -33,7 +34,7 @@ router.put("/gstin", (req, res, next) => {
 
 router.post("/upload", upload.array("files", 100), async (req, res, next) => {
   try {
-    if (!req.files?.length) throw new AppError(400, "FILES_REQUIRED", "Choose at least one PDF, XLSX, CSV, or JSON document.");
+    if (!req.files?.length) throw new AppError(400, ERROR_CODES.FILES_REQUIRED, "Choose at least one PDF, XLSX, CSV, or JSON document.");
     const result = await createDocuments(req.user.id, req.files);
     res.status(result.documents.length ? 201 : 422).json(result);
   } catch (error) { next(error); }

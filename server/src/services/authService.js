@@ -1,6 +1,8 @@
+import { ERROR_CODES } from "../api/errorCodes.js";
 import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { getDb } from "../db/database.js";
+import { writeTransaction } from "../db/transactions.js";
 import { config } from "../config.js";
 import { AppError } from "../errors.js";
 
@@ -27,14 +29,14 @@ export async function verifyPassword(password, stored) {
 export function validateCredentials({ name, email, password }, registering = false) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
-    throw new AppError(400, "INVALID_EMAIL", "Enter a valid email address.");
+    throw new AppError(400, ERROR_CODES.INVALID_EMAIL, "Enter a valid email address.");
   }
   if (String(password || "").length < 8) {
-    throw new AppError(400, "WEAK_PASSWORD", "Password must contain at least 8 characters.");
+    throw new AppError(400, ERROR_CODES.WEAK_PASSWORD, "Password must contain at least 8 characters.");
   }
   const normalizedName = String(name || "").trim();
   if (registering && normalizedName.length < 2) {
-    throw new AppError(400, "INVALID_NAME", "Enter the auditor's name.");
+    throw new AppError(400, ERROR_CODES.INVALID_NAME, "Enter the auditor's name.");
   }
   return { name: normalizedName, email: normalizedEmail, password: String(password) };
 }
@@ -43,7 +45,7 @@ export async function register(input) {
   const values = validateCredentials(input, true);
   const db = getDb();
   if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(values.email)) {
-    throw new AppError(409, "EMAIL_EXISTS", "An account already exists for this email. Sign in instead.");
+    throw new AppError(409, ERROR_CODES.EMAIL_EXISTS, "An account already exists for this email. Sign in instead.");
   }
   const user = {
     id: crypto.randomUUID(),
@@ -52,7 +54,13 @@ export async function register(input) {
     password_hash: await hashPassword(values.password),
     created_at: new Date().toISOString(),
   };
-  db.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (@id, @email, @name, @password_hash, @created_at)").run(user);
+  writeTransaction(db, () => {
+    // Password hashing yields; another instance may register this email meanwhile.
+    if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(values.email)) {
+      throw new AppError(409, ERROR_CODES.EMAIL_EXISTS, "An account already exists for this email. Sign in instead.");
+    }
+    db.prepare("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (@id, @email, @name, @password_hash, @created_at)").run(user);
+  });
   return publicUser(user);
 }
 
@@ -60,7 +68,7 @@ export async function authenticate(input) {
   const values = validateCredentials(input, false);
   const user = getDb().prepare("SELECT * FROM users WHERE email = ?").get(values.email);
   if (!user || !(await verifyPassword(values.password, user.password_hash))) {
-    throw new AppError(401, "INVALID_CREDENTIALS", "Email or password is incorrect.");
+    throw new AppError(401, ERROR_CODES.INVALID_CREDENTIALS, "Email or password is incorrect.");
   }
   return publicUser(user);
 }

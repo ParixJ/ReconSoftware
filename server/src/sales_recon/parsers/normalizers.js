@@ -1,3 +1,4 @@
+import { EXCEPTION_CODES } from "../../api/errorCodes.js";
 import { auditNormalized } from "./anomalies.js";
 import {
   addMoney,
@@ -28,14 +29,14 @@ const FIELD_SYNONYMS = {
 };
 
 const GENERATED_ANOMALY_CODES = new Set([
-  "UNKNOWN_DOCUMENT_TYPE",
-  "MISSING_CLIENT_GSTIN",
-  "INVALID_CLIENT_GSTIN",
-  "MISSING_RETURN_PERIOD",
-  "NO_RECORDS",
-  "INVALID_COUNTERPARTY_GSTIN",
-  "DUPLICATE_INVOICE",
-  "INVOICE_TOTAL_INCONSISTENT",
+  EXCEPTION_CODES.UNKNOWN_DOCUMENT_TYPE,
+  EXCEPTION_CODES.MISSING_CLIENT_GSTIN,
+  EXCEPTION_CODES.INVALID_CLIENT_GSTIN,
+  EXCEPTION_CODES.MISSING_RETURN_PERIOD,
+  EXCEPTION_CODES.NO_RECORDS,
+  EXCEPTION_CODES.INVALID_COUNTERPARTY_GSTIN,
+  EXCEPTION_CODES.DUPLICATE_INVOICE,
+  EXCEPTION_CODES.INVOICE_TOTAL_INCONSISTENT,
 ]);
 
 function unwrap(payload) {
@@ -123,10 +124,6 @@ function normalizeGstr1(root) {
     sourceRows: [],
     anomalies: [],
   });
-  const clientState = normalized.gstin?.slice(0, 2);
-  for (const row of rows.filter((item) => ["b2cl", "b2cs"].includes(item.section) && item.placeOfSupply && item.placeOfSupply !== clientState)) {
-    addMoney(normalized.summary.interStateUnregistered, row);
-  }
   return normalized;
 }
 
@@ -258,7 +255,7 @@ export function applyFieldMapping(parsed, input) {
   if (parsed.builtInSchema) {
     const anomalies = (parsed.anomalies || []).filter((item) => (
       !GENERATED_ANOMALY_CODES.has(item.code)
-      && !(item.code === "BOOKS_GSTIN_NOT_FOUND" && metadata.gstin)
+      && !(item.code === EXCEPTION_CODES.BOOKS_GSTIN_NOT_FOUND && metadata.gstin)
     ));
     const rows = parsed.rows.map((row) => ({ ...row, documentType: metadata.documentType, clientGstin: metadata.gstin }));
     return finish({ ...parsed, ...metadata, rows, anomalies });

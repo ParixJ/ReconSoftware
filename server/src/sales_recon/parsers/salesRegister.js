@@ -1,3 +1,4 @@
+import { EXCEPTION_CODES } from "../../api/errorCodes.js";
 import {
   GSTIN_PATTERN,
   addMoney,
@@ -278,25 +279,25 @@ export function parseSalesRegisterMatrix(matrix, filename = "", options = {}) {
   for (const row of rows) row.clientGstin = gstin;
   const anomalies = [];
   if (!gstin) anomalies.push({
-    code: "BOOKS_GSTIN_NOT_FOUND",
+    code: EXCEPTION_CODES.BOOKS_GSTIN_NOT_FOUND,
     severity: "warning",
     message: "The taxpayer GSTIN was not found in the sales-register heading or filename.",
     suggestion: "Confirm that this register belongs to the GSTIN shown on the uploaded returns.",
   });
   if (!rows.length) anomalies.push({
-    code: "NO_SALES_RECORDS",
+    code: EXCEPTION_CODES.NO_SALES_RECORDS,
     severity: "error",
     message: "No dated sales records were found below the detected header.",
     suggestion: "Verify the workbook sheet, header row and bill-date values.",
   });
   if (ignoredDateCount) anomalies.push({
-    code: "BOOKS_ROWS_WITHOUT_VALID_DATE",
+    code: EXCEPTION_CODES.BOOKS_ROWS_WITHOUT_VALID_DATE,
     severity: "warning",
     message: `${ignoredDateCount} populated row${ignoredDateCount === 1 ? " was" : "s were"} ignored because the bill/invoice date was invalid.`,
     suggestion: "Review totals, footer rows and malformed dates in the sales register.",
   });
   if (duplicateCount) anomalies.push({
-    code: "DUPLICATE_BOOKS_INVOICE",
+    code: EXCEPTION_CODES.DUPLICATE_BOOKS_INVOICE,
     severity: "warning",
     message: `${duplicateCount} possible duplicate invoice${duplicateCount === 1 ? " was" : "s were"} found for the same party and period.`,
     suggestion: "Review duplicate invoice numbers before finalizing the reconciliation.",

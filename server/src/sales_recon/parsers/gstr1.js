@@ -1,3 +1,4 @@
+import { EXCEPTION_CODES } from "../../api/errorCodes.js";
 import {
   amountsAfter,
   finalizePdfParse,
@@ -15,6 +16,9 @@ const SECTION_ORDER = new Map([
   ["9A-B2B", 90], ["9A-B2B-RCM", 91], ["9A-B2CL", 92],
   ["9B-CDNR", 100], ["9B-CDNUR", 101], ["10", 110],
 ]);
+
+const LIABILITY_START = /Total\s+Liability\s*\(Outward\s+supplies\s+other\s+than\s+Reverse\s+charge\)/i;
+const LIABILITY_END = /Verification|Authorized\s+Signatory/i;
 
 const DEFINITIONS = [
   {
@@ -168,8 +172,8 @@ function table8Rows(text) {
 function liabilityFallback(text) {
   const values = amountsAfter(
     text,
-    /Total\s+Liability\s*\(Outward\s+supplies\s+other\s+than\s+Reverse\s+charge\)/i,
-    /Verification|Authorized\s+Signatory/i,
+    LIABILITY_START,
+    LIABILITY_END,
     500,
   );
   if (!values?.length) return null;
@@ -216,9 +220,9 @@ export function parseGstr1Text(rawText, filename = "") {
   rows.sort((left, right) => (SECTION_ORDER.get(left.section) ?? 1000) - (SECTION_ORDER.get(right.section) ?? 1000));
 
   const anomalies = scannedPdfAnomaly(text, "gstr1");
-  if (!rows.length && !anomalies.some((item) => item.code === "SCANNED_PDF")) {
+  if (!rows.length && !anomalies.some((item) => item.code === EXCEPTION_CODES.SCANNED_PDF)) {
     anomalies.push({
-      code: "GSTR1_TABLES_NOT_PARSED",
+      code: EXCEPTION_CODES.GSTR1_TABLES_NOT_PARSED,
       severity: "error",
       message: "GSTR-1 was identified, but its outward-supply tables did not match a supported layout.",
       suggestion: "Upload the GST portal JSON/XLSX export or review the PDF layout before reconciliation.",

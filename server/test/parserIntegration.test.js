@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parseGstr1Text } from "../src/sales_recon/parsers/gstr1.js";
 import { parseGstr3bText } from "../src/sales_recon/parsers/gstr3b.js";
 import { parseUploadedFile } from "../src/sales_recon/parsers/index.js";
-import { applyFieldMapping } from "../src/sales_recon/parsers/normalizers.js";
+import { applyFieldMapping, normalizeJson } from "../src/sales_recon/parsers/normalizers.js";
 import { parseSalesRegisterMatrix } from "../src/sales_recon/parsers/salesRegister.js";
 
 test("routes an uploaded PDF through the detected GSTR-1 parser", async () => {
@@ -93,6 +93,52 @@ test("recognizes the GST portal 5A label when B2C-large is the only taxable sect
 
   assert.equal(parsed.rows.find((row) => row.section === "5")?.taxableValue, 250000);
   assert.equal(parsed.summary.taxableOutward.taxableValue, 250000);
+  assert.equal(parsed.summary.interStateUnregistered.taxableValue, 250000);
+  assert.equal(parsed.summary.interStateUnregistered.igst, 45000);
+});
+
+test("preserves GSTR-1 B2CL table 3.2 summary after mapping refresh", () => {
+  const parsed = normalizeJson({
+    gstin: "29AABFB5678G1Z8",
+    fp: "042025",
+    b2cl: [{
+      pos: "27",
+      inv: [{
+        inum: "B2CL-1",
+        idt: "01-04-2025",
+        val: 295000,
+        itms: [{ itm_det: { txval: 250000, iamt: 45000 } }],
+      }],
+    }],
+  }, "gstr1-apr-2025.json");
+
+  const remapped = applyFieldMapping(parsed, {
+    documentType: "gstr1",
+    gstin: parsed.gstin,
+    returnPeriod: parsed.returnPeriod,
+    fieldMap: {},
+  });
+
+  assert.equal(parsed.summary.taxableOutward.taxableValue, 250000);
+  assert.equal(parsed.summary.interStateUnregistered.taxableValue, 250000);
+  assert.equal(remapped.summary.interStateUnregistered.taxableValue, 250000);
+  assert.equal(remapped.summary.interStateUnregistered.igst, 45000);
+});
+
+test("extracts month-range periods from GST return PDF text", () => {
+  const gstr1 = parseGstr1Text(`
+    FORM GSTR-1 GSTIN 29AABFB5678G1Z8 Tax period Jan-March 2025
+    B2B regular invoices 1 Invoice 300,000.00 0.00 27,000.00 27,000.00 0.00
+    B2B reverse charge 0 Invoice 0.00 0.00 0.00 0.00 0.00
+    Other outward-supply sections
+  `, "gstr1-jan-march-2025.pdf");
+  const gstr3b = parseGstr3bText(`
+    FORM GSTR-3B GSTIN 29AABFB5678G1Z8 Period March-July 2025
+    (a) Outward taxable supplies other than zero/nil/exempt 500000.00 0.00 45000.00 45000.00 0.00
+  `, "gstr3b-march-july-2025.pdf");
+
+  assert.equal(gstr1.returnPeriod, "012025-032025");
+  assert.equal(gstr3b.returnPeriod, "032025-072025");
 });
 
 test("flags a GSTR-1 PDF without a usable text layer", () => {

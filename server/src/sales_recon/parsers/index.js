@@ -1,3 +1,4 @@
+import { ERROR_CODES, EXCEPTION_CODES } from "../../api/errorCodes.js";
 import fs from "node:fs/promises";
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import { readSheet } from "read-excel-file/node";
@@ -15,7 +16,7 @@ async function parseJson(filePath, filename) {
   try {
     payload = JSON.parse((await fs.readFile(filePath, "utf8")).replace(/^\uFEFF/, ""));
   } catch {
-    throw new AppError(400, "INVALID_JSON", `${filename} is not valid JSON.`);
+    throw new AppError(400, ERROR_CODES.INVALID_JSON, `${filename} is not valid JSON.`);
   }
   return normalizeJson(payload, filename);
 }
@@ -25,9 +26,9 @@ async function parseWorkbook(filePath, filename) {
   try {
     matrix = await readSheet(filePath);
   } catch {
-    throw new AppError(400, "INVALID_WORKBOOK", `${filename} could not be read as an XLSX workbook.`);
+    throw new AppError(400, ERROR_CODES.INVALID_WORKBOOK, `${filename} could not be read as an XLSX workbook.`);
   }
-  if (!matrix.length) return genericNormalize([], filename, { anomalies: [{ code: "EMPTY_WORKBOOK", severity: "warning", message: "The workbook has no populated rows.", suggestion: "Upload a populated GST return export." }] });
+  if (!matrix.length) return genericNormalize([], filename, { anomalies: [{ code: EXCEPTION_CODES.EMPTY_WORKBOOK, severity: "warning", message: "The workbook has no populated rows.", suggestion: "Upload a populated GST return export." }] });
   const salesRegister = parseSalesRegisterMatrix(matrix, filename, { strict: false });
   if (salesRegister) return salesRegister;
   const headers = matrix[0].map((value, index) => String(value ?? "").trim() || `Column ${index + 1}`);
@@ -43,7 +44,7 @@ async function parseDelimited(filePath, filename) {
   try {
     rows = parseCsv(content, { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true, bom: true });
   } catch {
-    throw new AppError(400, "INVALID_CSV", `${filename} could not be read as a CSV table.`);
+    throw new AppError(400, ERROR_CODES.INVALID_CSV, `${filename} could not be read as a CSV table.`);
   }
   return genericNormalize(rows, filename);
 }
@@ -53,7 +54,7 @@ async function parsePdf(filePath, filename) {
   try {
     extracted = await pdf(await fs.readFile(filePath));
   } catch {
-    throw new AppError(400, "INVALID_PDF", `${filename} could not be parsed as a PDF document.`);
+    throw new AppError(400, ERROR_CODES.INVALID_PDF, `${filename} could not be parsed as a PDF document.`);
   }
   const text = extracted.text || "";
   const documentType = detectDocumentType({ filename, text });
@@ -67,12 +68,12 @@ async function parsePdf(filePath, filename) {
     gstin: firstGstin(text),
     returnPeriod: normalizePeriod(periodMatch?.[1]),
     anomalies: text.trim() ? [{
-      code: "PDF_REVIEW_REQUIRED",
+      code: EXCEPTION_CODES.PDF_REVIEW_REQUIRED,
       severity: "warning",
       message: "PDF text was extracted, but table layout should be reviewed before reconciliation.",
       suggestion: "Open the document table and use Modify mapping if fields were not recognized.",
     }] : [{
-      code: "SCANNED_PDF",
+      code: EXCEPTION_CODES.SCANNED_PDF,
       severity: "error",
       message: "The PDF contains no extractable text and may be scanned.",
       suggestion: "Upload a text PDF or the GST portal JSON/XLSX export.",

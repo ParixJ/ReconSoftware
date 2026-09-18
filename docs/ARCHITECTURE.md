@@ -25,7 +25,7 @@ server/src
   app.js           Shared Express setup, sessions, static client, and errors
   config.js        Shared runtime configuration and storage locations
   errors.js        Shared application error type
-  api/             Machine-readable endpoint contract
+  api/             Machine-readable endpoint contract and error-code catalog
   db/              Shared SQLite connection and existing schema
   middleware/      Shared authentication and error handling
   routes/
@@ -42,11 +42,21 @@ server/src
 
 The backend remains one Express process with service-specific modules. Shared infrastructure lives outside those modules. `server/src/app.js` mounts the universal router at `/api`; the universal router imports each module's `app.js`, which exports an Express `Router` and registers only that module's routes. Module routers do not create servers, sessions, database connections, static-file handlers, or terminal error handlers.
 
-The sales module retains `/api/documents`, `/api/document-org`, and `/api/reconciliations`. Authentication remains at `/api/auth`, and health remains at `/api/health`. Authentication middleware is attached to each protected sales route prefix rather than the whole module router, allowing unrelated future modules and unknown paths to reach their own handlers. Existing database tables, storage paths, and API payloads are unchanged.
+The sales module is mounted at `/api/sales`, with `/documents`, `/document-org`, and `/reconciliations` beneath it. Authentication remains at `/api/auth`, and health remains at `/api/health`. Authentication middleware is attached to each protected sales route prefix rather than the whole module router, allowing unrelated future modules and unknown paths to reach their own handlers. Existing database tables and upload storage paths are unchanged.
 
 To integrate another service, create a sibling directory under `server/src` with an `app.js` exporting a router and its own `routes/`, `services/`, and any required `parsers/`. Import and mount that router once in `routes/index.js`, using a distinct route prefix for new services. Reuse shared authentication and errors, and let failures reach the shared error handler. Document the service's endpoints in `api/contracts.js` and `docs/API_CONTRACTS.md`; document any separately approved persistence changes in `docs/DATABASE_SCHEMA.md`. Module-specific tests should import from the module directory, while API integration tests should continue using the shared `createApp()` factory.
 
-The sales workbook export resolves `sample-docs/GST_Reconciliation.xlsx` from the repository root. This required template must be supplied for exports; a missing template raises `RECONCILIATION_TEMPLATE_MISSING` rather than substituting generated data.
+The sales workbook export resolves `server/templates/GST_Reconciliation.xlsx` relative to the module file, independently of the working directory. This required template must be supplied for exports; a missing template raises `RECONCILIATION_TEMPLATE_MISSING` rather than substituting generated data.
+
+## Integration from server1
+
+The imported sales services remain inside `sales_recon`; the shared Express app, Helmet setup, universal router, `/api/sales` mount, configuration, and authentication routes are retained. `server1` remains a source snapshot rather than a second runtime server.
+
+`db/transactions.js` coordinates synchronous writes through SQLite `BEGIN IMMEDIATE` and nested savepoints. Database initialization, registration, uploads, mapping, metadata refresh, reconciliation, and deletion use that shared transaction helper. Separate-process tests cover account quotas, lock contention, and rollback. Document deletion stages files for restoration on rollback; a crash after database commit can leave staged files requiring administrative cleanup. There is no new persistent schema.
+
+`api/errorCodes.js` supplies the catalog referenced by the imported source but absent from the `server1` snapshot. Its values retain the existing code strings; imported modules use server-local imports rather than depending on a missing repository-level `shared/errorCodes.js`. Backend tests validate catalog references and the error response schema.
+
+The imported functionality includes filed return ranges retained as one reconciliation period, workbook exports from saved comparison snapshots when sources cannot reload, export amendment endpoints, and owner-scoped reconciliation deletion. Frontend integration is separate: the current client still requests unprefixed `/api/documents` and `/api/reconciliations` and references a missing repository-level error catalog. Backend validation exercises the retained `/api/sales` routes directly.
 
 ## File processing
 

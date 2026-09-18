@@ -1,3 +1,4 @@
+import { EXCEPTION_CODES } from "../../api/errorCodes.js";
 import { auditNormalized } from "./anomalies.js";
 import {
   asNumber,
@@ -59,27 +60,62 @@ function yearFromFinancialYear(month, firstYear, secondYear) {
   return monthNumber >= 4 ? firstYear : secondYear;
 }
 
+function monthNumber(name) {
+  return MONTHS.get(String(name || "").toLowerCase());
+}
+
+function periodRange(startMonth, startYear, endMonth, endYear = startYear) {
+  const resolvedEndYear = Number(endMonth) < Number(startMonth) && String(endYear) === String(startYear)
+    ? Number(startYear) + 1
+    : Number(endYear);
+  return normalizePeriod(String(startMonth) + startYear + "-" + endMonth + resolvedEndYear);
+}
+
 export function periodFromText(text, filename = "") {
   const normalized = normalizePdfText(text);
+  const numericRange = normalized.match(/(?:return|tax)\s*period\s*[:\-]?\s*((?:0[1-9]|1[0-2])\d{4})\s*(?:-|to)\s*((?:0[1-9]|1[0-2])\d{4})\b/i);
+  if (numericRange) return normalizePeriod(numericRange[1] + "-" + numericRange[2]);
+
   const numeric = normalized.match(/(?:return|tax)\s*period\s*[:\-]?\s*((?:0[1-9]|1[0-2])\d{4})\b/i);
   if (numeric) return normalizePeriod(numeric[1]);
 
-  const namedWithYear = normalized.match(new RegExp(`(?:return\\s*period|tax\\s*period|period|financial\\s+year\\s*\\/\\s*tax\\s*period)[^A-Za-z0-9]{0,15}${MONTH_PATTERN}[^0-9]{0,15}(20\\d{2})`, "i"));
-  if (namedWithYear) return `${MONTHS.get(namedWithYear[1].toLowerCase())}${namedWithYear[2]}`;
+  const namedRangeWithYear = normalized.match(new RegExp("(?:return\\s*period|tax\\s*period|period|financial\\s+year\\s*\\/\\s*tax\\s*period)[^A-Za-z0-9]{0,15}" + MONTH_PATTERN + "[^A-Za-z0-9]{0,20}(?:-|to)[^A-Za-z0-9]{0,20}" + MONTH_PATTERN + "[^0-9]{0,15}(20\\d{2})", "i"));
+  if (namedRangeWithYear) return periodRange(monthNumber(namedRangeWithYear[1]), namedRangeWithYear[3], monthNumber(namedRangeWithYear[2]));
 
-  const named = normalized.match(new RegExp(`(?:return\\s*period|tax\\s*period|period)[^A-Za-z]{0,15}${MONTH_PATTERN}`, "i"));
+  const namedWithYear = normalized.match(new RegExp("(?:return\\s*period|tax\\s*period|period|financial\\s+year\\s*\\/\\s*tax\\s*period)[^A-Za-z0-9]{0,15}" + MONTH_PATTERN + "[^0-9]{0,15}(20\\d{2})", "i"));
+  if (namedWithYear) return MONTHS.get(namedWithYear[1].toLowerCase()) + namedWithYear[2];
+
+  const namedRange = normalized.match(new RegExp("(?:return\\s*period|tax\\s*period|period)[^A-Za-z]{0,15}" + MONTH_PATTERN + "[^A-Za-z0-9]{0,20}(?:-|to)[^A-Za-z0-9]{0,20}" + MONTH_PATTERN, "i"));
+  const financialYearForRange = normalized.match(/(?:financial\s+year|year)\s*(?:\/\s*tax\s*period)?\s*[:\-]?\s*(20\d{2})\s*-\s*(\d{2,4})/i);
+  if (namedRange && financialYearForRange) {
+    const startMonth = monthNumber(namedRange[1]);
+    const endMonth = monthNumber(namedRange[2]);
+    const secondYear = financialYearForRange[2].length === 2 ? financialYearForRange[1].slice(0, 2) + financialYearForRange[2] : financialYearForRange[2];
+    return periodRange(
+      startMonth,
+      yearFromFinancialYear(startMonth, financialYearForRange[1], secondYear),
+      endMonth,
+      yearFromFinancialYear(endMonth, financialYearForRange[1], secondYear),
+    );
+  }
+
+  const named = normalized.match(new RegExp("(?:return\\s*period|tax\\s*period|period)[^A-Za-z]{0,15}" + MONTH_PATTERN, "i"));
   const financialYear = normalized.match(/(?:financial\s+year|year)\s*(?:\/\s*tax\s*period)?\s*[:\-]?\s*(20\d{2})\s*-\s*(\d{2,4})/i);
   if (named && financialYear) {
     const month = MONTHS.get(named[1].toLowerCase());
-    const secondYear = financialYear[2].length === 2 ? `${financialYear[1].slice(0, 2)}${financialYear[2]}` : financialYear[2];
-    return `${month}${yearFromFinancialYear(month, financialYear[1], secondYear)}`;
+    const secondYear = financialYear[2].length === 2 ? financialYear[1].slice(0, 2) + financialYear[2] : financialYear[2];
+    return month + yearFromFinancialYear(month, financialYear[1], secondYear);
   }
 
   const sourceName = filename.replace(/\.[^.]+$/, "");
-  const filenameNamed = sourceName.match(new RegExp(`${MONTH_PATTERN}[^0-9]{0,8}(20\\d{2})`, "i"));
-  if (filenameNamed) return `${MONTHS.get(filenameNamed[1].toLowerCase())}${filenameNamed[2]}`;
+  const filenameRangeNamed = sourceName.match(new RegExp(MONTH_PATTERN + "[^A-Za-z0-9]{0,8}(?:-|to)[^A-Za-z0-9]{0,8}" + MONTH_PATTERN + "[^0-9]{0,8}(20\\d{2})", "i"));
+  if (filenameRangeNamed) return periodRange(monthNumber(filenameRangeNamed[1]), filenameRangeNamed[3], monthNumber(filenameRangeNamed[2]));
+  const filenameNamed = sourceName.match(new RegExp(MONTH_PATTERN + "[^0-9]{0,8}(20\\d{2})", "i"));
+  if (filenameNamed) return MONTHS.get(filenameNamed[1].toLowerCase()) + filenameNamed[2];
+  const filenameNumericRange = sourceName.match(/(?:^|[^0-9])((?:0[1-9]|1[0-2]))[^0-9]?(20\d{2})[^0-9]+((?:0[1-9]|1[0-2]))[^0-9]?(20\d{2})(?:[^0-9]|$)/);
+  if (filenameNumericRange) return normalizePeriod(filenameNumericRange[1] + filenameNumericRange[2] + "-" + filenameNumericRange[3] + filenameNumericRange[4]);
   const filenameNumeric = sourceName.match(/(?:^|[^0-9])((?:0[1-9]|1[0-2]))[^0-9]?(20\d{2})(?:[^0-9]|$)/);
-  return filenameNumeric ? `${filenameNumeric[1]}${filenameNumeric[2]}` : null;
+  return filenameNumeric ? filenameNumeric[1] + filenameNumeric[2] : null;
 }
 
 export function namedValue(text, labelPattern, endPattern) {
@@ -141,7 +177,7 @@ export function scannedPdfAnomaly(text, documentType) {
   if (new RegExp(`GSTR\\s*-?\\s*${documentType === "gstr3b" ? "3B" : "1"}`, "i").test(normalized)) return [];
   const letters = (normalized.match(/[A-Za-z]/g) || []).length;
   return letters >= 80 ? [] : [{
-    code: "SCANNED_PDF",
+    code: EXCEPTION_CODES.SCANNED_PDF,
     severity: "error",
     message: `The ${documentType === "gstr3b" ? "GSTR-3B" : "GSTR-1"} PDF has no usable text layer and may be scanned.`,
     suggestion: "Run OCR first or upload the GST portal JSON/XLSX export.",

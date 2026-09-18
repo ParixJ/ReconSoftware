@@ -56,7 +56,7 @@ test("universal router serves shared endpoints and protects sales routes", async
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { status: "ok" });
 
-  for (const endpoint of ["auth/me", "documents", "document-org/missing", "reconciliations"]) {
+  for (const endpoint of ["auth/me", "sales/documents", "sales/document-org/missing", "sales/reconciliations"]) {
     const response = await fetch(`${base}/${endpoint}`);
     assert.equal(response.status, 401, endpoint);
     assert.equal((await response.json()).error.code, "AUTH_REQUIRED", endpoint);
@@ -84,10 +84,11 @@ test("authenticated API isolates documents and runs the full three-return flow",
     await new Promise((resolve) => server.close(resolve));
   });
   const address = server.address();
-  const base = `http://127.0.0.1:${address.port}/api`;
+  const apiBase = `http://127.0.0.1:${address.port}/api`;
+  const base = `${apiBase}/sales`;
 
   async function register(email) {
-    const response = await fetch(`${base}/auth/register`, {
+    const response = await fetch(`${apiBase}/auth/register`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "Test Auditor", email, password: "auditor-pass-2026" }),
     });
@@ -180,10 +181,40 @@ test("authenticated API isolates documents and runs the full three-return flow",
   assert.equal((await hiddenResponse.json()).document.mappingCoverage.viewMode, "hidden");
 
   const otherCookie = await register("other@example.test");
+  const exportQuery = "gstin=24AEXPS3034H1Z6&year=2026";
+  const exportDataResponse = await fetch(`${base}/reconciliations/export-data?${exportQuery}`, { headers: { cookie } });
+  assert.equal(exportDataResponse.status, 200);
+  const { exportData } = await exportDataResponse.json();
+  assert.ok(exportData.rows.length > 0);
+  assert.equal((await fetch(`${base}/reconciliations/export-data?${exportQuery}`, { headers: { cookie: otherCookie } })).status, 404);
+
+  const exportResponse = await fetch(`${base}/reconciliations/export`, {
+    method: "POST", headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ gstin: exportData.clientGstin, year: "2026", rows: [{ id: exportData.rows[0].id, value: 42 }] }),
+  });
+  assert.equal(exportResponse.status, 200);
+  assert.equal(exportResponse.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  const workbook = new Uint8Array(await exportResponse.arrayBuffer());
+  assert.deepEqual([...workbook.slice(0, 2)], [0x50, 0x4b]);
+
+  const invalidAmendment = await fetch(`${base}/reconciliations/export`, {
+    method: "POST", headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ gstin: exportData.clientGstin, year: "2026", rows: [{ id: "unowned-cell", value: 42 }] }),
+  });
+  assert.equal(invalidAmendment.status, 400);
+  assert.equal((await invalidAmendment.json()).error.code, "INVALID_EXPORT_AMENDMENT");
+
   const otherList = await fetch(`${base}/documents`, { headers: { cookie: otherCookie } });
   assert.equal(otherList.status, 200);
   assert.equal((await otherList.json()).documents.length, 0);
   assert.equal((await fetch(`${base}/document-org/${gstr1Document.id}`, { headers: { cookie: otherCookie } })).status, 404);
+  assert.equal((await fetch(`${base}/reconciliations/${reconciliation.id}`, { method: "DELETE", headers: { cookie: otherCookie } })).status, 404);
+
+  const reconciliationListBeforeDelete = await fetch(`${base}/reconciliations`, { headers: { cookie } });
+  assert.equal(reconciliationListBeforeDelete.status, 200);
+  assert.ok((await reconciliationListBeforeDelete.json()).reconciliations.some((item) => item.id === reconciliation.id));
+  assert.equal((await fetch(`${base}/reconciliations/${reconciliation.id}`, { method: "DELETE", headers: { cookie } })).status, 204);
+  assert.equal((await fetch(`${base}/reconciliations/${reconciliation.id}`, { headers: { cookie } })).status, 404);
 
   const storedFilesBeforeDelete = fs.readdirSync(process.env.GST_UPLOAD_DIR);
   const otherDeleteResponse = await fetch(`${base}/documents/${unmappedId}`, { method: "DELETE", headers: { cookie: otherCookie } });

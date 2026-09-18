@@ -1,3 +1,4 @@
+import { EXCEPTION_CODES } from "../../api/errorCodes.js";
 import { asNumber } from "./utils.js";
 import {
   amountsAfter,
@@ -131,9 +132,9 @@ export function parseGstr3bText(rawText, filename = "") {
   if (interState) rows.push(interState);
 
   const anomalies = scannedPdfAnomaly(text, "gstr3b");
-  if (!supplyRows.some((row) => row.section === "3.1(a)") && !anomalies.some((item) => item.code === "SCANNED_PDF")) {
+  if (!supplyRows.some((row) => row.section === "3.1(a)") && !anomalies.some((item) => item.code === EXCEPTION_CODES.SCANNED_PDF)) {
     anomalies.push({
-      code: "GSTR3B_TABLE_3_1_NOT_PARSED",
+      code: EXCEPTION_CODES.GSTR3B_TABLE_3_1_NOT_PARSED,
       severity: "error",
       message: "GSTR-3B was identified, but table 3.1 did not match a supported layout.",
       suggestion: "Upload the GST portal JSON export or review the PDF layout before reconciliation.",
