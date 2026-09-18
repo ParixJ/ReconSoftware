@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { AppError } from "../errors.js";
+import { AppError } from "../../errors.js";
 
 export async function detectFileType(filePath, originalName = "") {
   const handle = await fs.open(filePath, "r");

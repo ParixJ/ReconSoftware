@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { Router } from "express";
 import multer from "multer";
-import { config } from "../config.js";
-import { AppError } from "../errors.js";
+import { config } from "../../config.js";
+import { AppError } from "../../errors.js";
 import { createDocuments, deleteDocument, deleteDocuments, getCurrentDocument, listDocuments, updateDocumentsGstin, updateMapping, updateViewPreference } from "../services/documentService.js";
 
 fs.mkdirSync(config.uploadDir, { recursive: true });

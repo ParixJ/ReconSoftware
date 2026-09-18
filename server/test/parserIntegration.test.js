@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseGstr1Text } from "../src/parsers/gstr1.js";
-import { parseGstr3bText } from "../src/parsers/gstr3b.js";
-import { parseUploadedFile } from "../src/parsers/index.js";
-import { applyFieldMapping } from "../src/parsers/normalizers.js";
-import { parseSalesRegisterMatrix } from "../src/parsers/salesRegister.js";
+import { parseGstr1Text } from "../src/sales_recon/parsers/gstr1.js";
+import { parseGstr3bText } from "../src/sales_recon/parsers/gstr3b.js";
+import { parseUploadedFile } from "../src/sales_recon/parsers/index.js";
+import { applyFieldMapping } from "../src/sales_recon/parsers/normalizers.js";
+import { parseSalesRegisterMatrix } from "../src/sales_recon/parsers/salesRegister.js";
 
 test("routes an uploaded PDF through the detected GSTR-1 parser", async () => {
   const testPdf = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../node_modules/pdf-parse/test/data/04-valid.pdf");

@@ -14,7 +14,7 @@ process.env.GST_UPLOAD_DIR = path.join(testRoot, "uploads");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const { createApp } = await import("../src/app.js");
 const { closeDb, getDb } = await import("../src/db/database.js");
-const { parseUploadedFile } = await import("../src/parsers/index.js");
+const { parseUploadedFile } = await import("../src/sales_recon/parsers/index.js");
 
 function fixture(relativePath) {
   return path.join(projectRoot, relativePath);
@@ -45,6 +45,27 @@ const sampleGstr3b = {
 };
 
 const unmappedLedger = "Ledger Ref,Party Label,Net Figure,Tax Figure\nL-1001,Northwind Components,125000,22500\nL-1002,Contoso Industrial,84000,15120\n";
+
+test("universal router serves shared endpoints and protects sales routes", async (context) => {
+  const server = createApp().listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}/api`;
+
+  const health = await fetch(`${base}/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { status: "ok" });
+
+  for (const endpoint of ["auth/me", "documents", "document-org/missing", "reconciliations"]) {
+    const response = await fetch(`${base}/${endpoint}`);
+    assert.equal(response.status, 401, endpoint);
+    assert.equal((await response.json()).error.code, "AUTH_REQUIRED", endpoint);
+  }
+
+  const missing = await fetch(`${base}/unknown-service`);
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).error.code, "NOT_FOUND");
+});
 
 test("provided GST JSON is recognized and normalized as GSTR-2B", async () => {
   const parsed = await parseUploadedFile(fixture("docs/returns_R2B_24AEXPS3034H1Z6_032026.json"), "returns_R2B_24AEXPS3034H1Z6_032026.json", "application/json");

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import { readSheet } from "read-excel-file/node";
 import { parse as parseCsv } from "csv-parse/sync";
-import { AppError } from "../errors.js";
+import { AppError } from "../../errors.js";
 import { detectFileType } from "./detectFileType.js";
 import { detectDocumentType, firstGstin, normalizePeriod } from "./utils.js";
 import { genericNormalize, normalizeJson } from "./normalizers.js";

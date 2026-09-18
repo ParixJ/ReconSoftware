@@ -21,13 +21,32 @@ client/src
   utils/           Display formatting and reconciliation-history grouping
 
 server/src
+  server.js        Process entry point and shutdown
+  app.js           Shared Express setup, sessions, static client, and errors
+  config.js        Shared runtime configuration and storage locations
+  errors.js        Shared application error type
   api/             Machine-readable endpoint contract
-  db/              SQLite connection and schema
-  middleware/      Authentication and error handling
-  parsers/         File detection and format-specific parsing
-  routes/          Express route adapters
-  services/        Authentication, documents, and reconciliation logic
+  db/              Shared SQLite connection and existing schema
+  middleware/      Shared authentication and error handling
+  routes/
+    index.js       Universal API router: health, authentication, service mounts
+    authRoutes.js  Shared authentication endpoints
+  services/
+    authService.js Shared user and session logic
+  sales_recon/
+    app.js         Sales module router exported to the universal router
+    routes/        Document, original-document, and reconciliation adapters
+    parsers/       Sales/GST file detection, extraction, and normalization
+    services/      Sales document, reconciliation, and export logic
 ```
+
+The backend remains one Express process with service-specific modules. Shared infrastructure lives outside those modules. `server/src/app.js` mounts the universal router at `/api`; the universal router imports each module's `app.js`, which exports an Express `Router` and registers only that module's routes. Module routers do not create servers, sessions, database connections, static-file handlers, or terminal error handlers.
+
+The sales module retains `/api/documents`, `/api/document-org`, and `/api/reconciliations`. Authentication remains at `/api/auth`, and health remains at `/api/health`. Authentication middleware is attached to each protected sales route prefix rather than the whole module router, allowing unrelated future modules and unknown paths to reach their own handlers. Existing database tables, storage paths, and API payloads are unchanged.
+
+To integrate another service, create a sibling directory under `server/src` with an `app.js` exporting a router and its own `routes/`, `services/`, and any required `parsers/`. Import and mount that router once in `routes/index.js`, using a distinct route prefix for new services. Reuse shared authentication and errors, and let failures reach the shared error handler. Document the service's endpoints in `api/contracts.js` and `docs/API_CONTRACTS.md`; document any separately approved persistence changes in `docs/DATABASE_SCHEMA.md`. Module-specific tests should import from the module directory, while API integration tests should continue using the shared `createApp()` factory.
+
+The sales workbook export resolves `sample-docs/GST_Reconciliation.xlsx` from the repository root. This required template must be supplied for exports; a missing template raises `RECONCILIATION_TEMPLATE_MISSING` rather than substituting generated data.
 
 ## File processing
 

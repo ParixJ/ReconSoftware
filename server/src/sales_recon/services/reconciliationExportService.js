@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import { AppError } from "../errors.js";
+import { AppError } from "../../errors.js";
 import { addMoney, asNumber, emptyMoney, GSTIN_PATTERN } from "../parsers/utils.js";
 import { rowsForReconciliation } from "./documentService.js";
 import { listReconciliations } from "./reconciliationService.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_PATH = path.resolve(moduleDir, "../../../sample-docs/GST_Reconciliation.xlsx");
+const TEMPLATE_PATH = path.resolve(moduleDir, "../../../../sample-docs/GST_Reconciliation.xlsx");
 const MONTHS = [
   ["04", "April"], ["05", "May"], ["06", "June"], ["07", "July"],
   ["08", "August"], ["09", "September"], ["10", "October"], ["11", "November"],

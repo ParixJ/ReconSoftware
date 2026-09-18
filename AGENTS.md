@@ -7,9 +7,11 @@
 - React-router
 - Zustand (state management)
 - Axios (API client)
+- Shadcn UI components
 
 ### Backend
 - Express
+- Express session for session management and auth
 
 # Structure
 *The Structure of the application should be as follows:*
@@ -20,5 +22,4 @@
 
 # Architecture
 - Keep a client/server architecture for the software.
-- the software should be Two-page website for now, as it would contain a initial authorization page, then a reconciliation page. 
 - The design document is provided for UI design decisions.

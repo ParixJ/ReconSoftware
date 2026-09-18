@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { config } from "../config.js";
-import { getDb } from "../db/database.js";
-import { AppError } from "../errors.js";
-import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../api/contracts.js";
+import { config } from "../../config.js";
+import { getDb } from "../../db/database.js";
+import { AppError } from "../../errors.js";
+import { CANONICAL_FIELDS, DOCUMENT_TYPES } from "../../api/contracts.js";
 import { applyFieldMapping } from "../parsers/normalizers.js";
 import { parseUploadedFile } from "../parsers/index.js";
 import { extractOriginalDocument } from "../parsers/originalDocument.js";

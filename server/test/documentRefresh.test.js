@@ -13,9 +13,9 @@ process.env.GST_DATABASE_PATH = path.join(testRoot, "test.sqlite");
 process.env.GST_UPLOAD_DIR = path.join(testRoot, "uploads");
 
 const { getDb, closeDb } = await import("../src/db/database.js");
-const { getCurrentDocument } = await import("../src/services/documentService.js");
-const { getOriginalDocument } = await import("../src/services/documentOriginalService.js");
-const { GSTR1_PARSER_VERSION } = await import("../src/parsers/gstr1.js");
+const { getCurrentDocument } = await import("../src/sales_recon/services/documentService.js");
+const { getOriginalDocument } = await import("../src/sales_recon/services/documentOriginalService.js");
+const { GSTR1_PARSER_VERSION } = await import("../src/sales_recon/parsers/gstr1.js");
 
 test("reparses a stored GSTR-1 PDF created by an older parser", async () => {
   const userId = crypto.randomUUID();

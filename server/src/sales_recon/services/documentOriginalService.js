@@ -1,7 +1,7 @@
 import path from "node:path";
-import { config } from "../config.js";
-import { getDb } from "../db/database.js";
-import { AppError } from "../errors.js";
+import { config } from "../../config.js";
+import { getDb } from "../../db/database.js";
+import { AppError } from "../../errors.js";
 import { extractOriginalDocument } from "../parsers/originalDocument.js";
 import { jsonSafeParse } from "../parsers/utils.js";
 import { deserializeDocument } from "./documentService.js";

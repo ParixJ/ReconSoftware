@@ -12,13 +12,13 @@ process.env.GST_DATABASE_PATH = path.join(testRoot, "test.sqlite");
 process.env.GST_UPLOAD_DIR = path.join(testRoot, "uploads");
 
 const { getDb, closeDb } = await import("../src/db/database.js");
-const { parseGstr1Text } = await import("../src/parsers/gstr1.js");
-const { parseGstr3bText } = await import("../src/parsers/gstr3b.js");
-const { normalizeJson } = await import("../src/parsers/normalizers.js");
-const { parseSalesRegisterMatrix } = await import("../src/parsers/salesRegister.js");
-const { updateDocumentsGstin, updateMapping } = await import("../src/services/documentService.js");
-const { exportReconciliationWorkbook } = await import("../src/services/reconciliationExportService.js");
-const { getReconciliation, listReconciliations, runReconciliation } = await import("../src/services/reconciliationService.js");
+const { parseGstr1Text } = await import("../src/sales_recon/parsers/gstr1.js");
+const { parseGstr3bText } = await import("../src/sales_recon/parsers/gstr3b.js");
+const { normalizeJson } = await import("../src/sales_recon/parsers/normalizers.js");
+const { parseSalesRegisterMatrix } = await import("../src/sales_recon/parsers/salesRegister.js");
+const { updateDocumentsGstin, updateMapping } = await import("../src/sales_recon/services/documentService.js");
+const { exportReconciliationWorkbook } = await import("../src/sales_recon/services/reconciliationExportService.js");
+const { getReconciliation, listReconciliations, runReconciliation } = await import("../src/sales_recon/services/reconciliationService.js");
 const { strFromU8, unzipSync } = await import("fflate");
 const { readSheet } = await import("read-excel-file/node");
 
