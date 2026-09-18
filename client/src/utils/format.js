@@ -12,8 +12,12 @@ export function money(value) {
 }
 
 export function period(value) {
-  if (!/^(0[1-9]|1[0-2])\d{4}$/.test(value || "")) return value || "Not detected";
-  return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(new Date(Number(value.slice(2)), Number(value.slice(0, 2)) - 1, 1));
+  const formatSingle = (periodValue) => new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(new Date(Number(periodValue.slice(2)), Number(periodValue.slice(0, 2)) - 1, 1));
+  const text = String(value || "");
+  const range = text.match(/^((?:0[1-9]|1[0-2])\d{4})-((?:0[1-9]|1[0-2])\d{4})$/);
+  if (range) return `${formatSingle(range[1])} - ${formatSingle(range[2])}`;
+  if (!/^(0[1-9]|1[0-2])\d{4}$/.test(text)) return value || "Not detected";
+  return formatSingle(text);
 }
 
 export function dateTime(value) {

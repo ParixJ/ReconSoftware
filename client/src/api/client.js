@@ -1,10 +1,7 @@
 import axios from "axios";
+export { ERROR_CODES, CLIENT_ERROR_CODES, errorCode, errorMessage } from "./errors.js";
 
 export const api = axios.create({ baseURL: "/api", withCredentials: true, timeout: 60000 });
-
-export function errorMessage(error, fallback = "The request could not be completed.") {
-  return error?.response?.data?.error?.message || error?.message || fallback;
-}
 
 export const authApi = {
   me: () => api.get("/auth/me"),
@@ -32,8 +29,14 @@ export const documentsApi = {
 export const reconciliationApi = {
   list: () => api.get("/reconciliations"),
   run: (input) => api.post("/reconciliations", input),
+  remove: (id) => api.delete(`/reconciliations/${id}`),
+  exportData: (gstin, input) => {
+    const params = typeof input === "string" ? { gstin, year: input } : { gstin, ...(input || {}) };
+    return api.get("/reconciliations/export-data", { params });
+  },
   exportWorkbook: (gstin, input) => {
     const params = typeof input === "string" ? { gstin, year: input } : { gstin, ...(input || {}) };
     return api.get("/reconciliations/export", { params, responseType: "blob" });
   },
+  exportWorkbookWithRows: (gstin, input) => api.post("/reconciliations/export", { gstin, ...(input || {}) }, { responseType: "blob" }),
 };

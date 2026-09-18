@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { documentsApi, errorMessage, reconciliationApi } from "../api/client.js";
 import DocumentLibrary from "../components/DocumentLibrary.jsx";
 import DocumentTabs from "../components/DocumentTabs.jsx";
@@ -9,17 +21,22 @@ import ReconciliationControls from "../components/ReconciliationControls.jsx";
 import TopNav from "../components/TopNav.jsx";
 import UploadPanel from "../components/UploadPanel.jsx";
 import { crossExamineClientGstins } from "../utils/gstinCrossExamination.js";
+import {useDocStore} from '../store/docStore.js';
 
 const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+function yearFromReturnPeriod(returnPeriod) {
+  return String(returnPeriod || "").match(/^(?:0[1-9]|1[0-2])(\d{4})/)?.[1] || null;
+}
 
 export default function WorkspacePage() {
   const navigate = useNavigate();
   const mappingMatch = useMatch("/home/mapping/:documentId");
-  const [documents, setDocuments] = useState([]);
+  const [documents, setDocuments] = [useDocStore((s)=>s.documents), useDocStore((s)=>s.setDocuments)];
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeId, setActiveId] = useState(null);
-  const [details, setDetails] = useState({});
-  const [originalDetails, setOriginalDetails] = useState({});
+  const [details, setDetails] = useState(new Map());
+  const [originalDetails, setOriginalDetails] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -29,6 +46,8 @@ export default function WorkspacePage() {
   const [applyingGstin, setApplyingGstin] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [tolerances, setTolerances] = useState({ amountTolerance: 1, dateToleranceDays: 0 });
   const [bulkGstin, setBulkGstin] = useState("");
@@ -113,10 +132,9 @@ export default function WorkspacePage() {
       if (uploadedIds[0]) setActiveId(uploadedIds[0]);
       const needsMapping = data.documents.filter((document) => document.status === "needs_mapping").length;
       if (data.errors.length) setNotice({ tone: "warning", title: `${data.documents.length} file(s) added; ${data.errors.length} failed`, message: data.errors.map((item) => `${item.filename}: ${item.message}`).join(" ") });
-      else if (needsMapping) setNotice({ tone: "warning", title: `${data.documents.length} document${data.documents.length === 1 ? "" : "s"} extracted; mapping review required`, message: "Choose whether to render unmatched source fields as extracted, keep the table hidden, or modify the mapping." });
+      else if (needsMapping) setNotice({ tone: "warning", title: `${data.documents.length} document${data.documents.length === 1 ? "" : "s"} extracted; mapping review required`, message: "Original source fields remain visible below. Review the unmatched mapping before reconciliation." });
       else setNotice({ tone: "success", title: `${data.documents.length} document${data.documents.length === 1 ? "" : "s"} ready`, message: "Return identity and structured rows were extracted on the server." });
     } catch (error) {
-      console.log(error.response.data.error);
       setNotice({ tone: "danger", title: "Upload failed", message: errorMessage(error) });
     } finally { setUploading(false); setUploadProgress(0); }
   };
@@ -137,7 +155,7 @@ export default function WorkspacePage() {
       const params = new URLSearchParams();
       const gstin = data.reconciliation.result?.clientGstin;
       const years = (data.reconciliation.result?.periods || [])
-        .map((item) => item.returnPeriod?.slice(2))
+        .map((item) => yearFromReturnPeriod(item.returnPeriod))
         .filter((year) => /^\d{4}$/.test(year || ""))
         .sort((left, right) => right.localeCompare(left));
       if (gstin) params.set("gstin", gstin);
@@ -196,8 +214,9 @@ export default function WorkspacePage() {
     } finally { setSavingMapping(false); }
   };
 
-  const deleteUploadedDocument = async (document) => {
-    if (!window.confirm(`Delete ${document.originalName}? This will permanently remove the uploaded file.`)) return;
+  const deleteUploadedDocument = async () => {
+    const document = deleteTarget;
+    if (!document) return;
     setDeletingId(document.id);
     setNotice(null);
     try {
@@ -208,15 +227,15 @@ export default function WorkspacePage() {
       setNotice({ tone: "danger", title: "Document could not be deleted", message: errorMessage(error) });
     } finally {
       setDeletingId(null);
+      setDeleteTarget(null);
     }
   };
 
   const deleteSelectedDocuments = async () => {
     const documentIds = [...selectedIds];
     if (!documentIds.length) return;
-    const noun = documentIds.length === 1 ? "file" : "files";
-    if (!window.confirm(`Delete ${documentIds.length} selected ${noun}? This will permanently remove the uploaded ${noun}.`)) return;
     setBulkDeleting(true);
+    setBulkDeleteOpen(false);
     setNotice(null);
     try {
       const { data } = await documentsApi.removeMany(documentIds);
@@ -236,20 +255,44 @@ export default function WorkspacePage() {
   if (mappingMatch) return <MappingPanel document={details[mappingMatch.params.documentId]} onClose={() => navigate("/home")} onSave={saveMapping} saving={savingMapping} />;
 
   return (
-    <div className="workspace-shell">
+    <div className="min-h-screen bg-background text-foreground">
       <TopNav />
-      <main className="workspace" id="workspace">
-        <header className="page-header"><div><p className="eyebrow">Auditor home</p><h1>Reconciliation workspace</h1><p>Upload books and returns, verify extracted fields, then compare outward liability and input tax credit.</p></div></header>
+      <main className="mx-auto w-full max-w-[1600px] space-y-5 px-4 py-6 sm:px-6 lg:px-8" id="workspace">
+        <header className="border-b border-border pb-5"><p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Auditor home</p><h1 className="mt-1 text-2xl">Reconciliation workspace</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">Upload books and returns, verify extracted fields, then compare outward liability and input tax credit.</p></header>
         {notice ? <Notice tone={notice.tone} title={notice.title} onClose={() => setNotice(null)}>{notice.message}</Notice> : null}
-        {loading ? <div className="panel loading-block"><span className="spinner" />Loading documents…</div> : (
+        {loading ? <Card><CardContent className="flex min-h-36 items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner label="Loading documents" />Loading documents…</CardContent></Card> : (
           <>
             <UploadPanel onUpload={upload} uploading={uploading} progress={uploadProgress} />
-            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={deleteUploadedDocument} onDeleteSelected={deleteSelectedDocuments} deletingId={deletingId} bulkDeleting={bulkDeleting} />
+            <DocumentLibrary documents={documents} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={toggleAllDocuments} onMap={(id) => navigate(`/home/mapping/${id}`)} onDelete={setDeleteTarget} onDeleteSelected={() => setBulkDeleteOpen(true)} deletingId={deletingId} bulkDeleting={bulkDeleting} />
             <ReconciliationControls selectedCount={selectedDocuments.length} crossExamination={crossExamination} values={tolerances} gstinValue={bulkGstin} onChange={(event) => setTolerances((current) => ({ ...current, [event.target.name]: event.target.value }))} onGstinChange={(event) => setBulkGstin(event.target.value.toUpperCase())} onApplyGstin={applyGstinToSelected} onRun={run} running={running} applyingGstin={applyingGstin} />
             <DocumentTabs selectedDocuments={selectedDocuments} activeId={activeId} onActive={setActiveId} onRemove={toggleSelection} onMap={(id) => navigate(`/home/mapping/${id}`)} detail={originalDetails[activeId]} loading={detailLoading} />
           </>
         )}
       </main>
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deletingId) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete document?</AlertDialogTitle>
+            <AlertDialogDescription>{deleteTarget ? `Delete ${deleteTarget.originalName}? This will permanently remove the uploaded file.` : "This will permanently remove the uploaded file."}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(deletingId)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteUploadedDocument} disabled={Boolean(deletingId)}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!bulkDeleting) setBulkDeleteOpen(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected documents?</AlertDialogTitle>
+            <AlertDialogDescription>Delete {selectedIds.length} selected {selectedIds.length === 1 ? "file" : "files"}? This will permanently remove the uploaded {selectedIds.length === 1 ? "file" : "files"}.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteSelectedDocuments} disabled={bulkDeleting || !selectedIds.length}>Delete selected</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

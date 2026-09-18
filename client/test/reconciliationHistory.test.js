@@ -44,6 +44,7 @@ test("builds one year report while preserving monthly rows and aggregate metrics
   assert.deepEqual(reconciliation.result.periods.map((item) => item.returnPeriod), ["042025", "052025"]);
   assert.deepEqual(reconciliation.result.summary, { totalChecks: 8, matched: 7, mismatched: 1, exceptions: 0, highRisk: 1, totalAbsoluteDifference: 25 });
   assert.equal(reconciliation.result.clientGstin, gstin);
+  assert.deepEqual(reconciliation.exportScope, { year: "2025" });
   assert.equal(reconciliation.createdAt, "2025-06-01T00:00:00.000Z");
 });
 

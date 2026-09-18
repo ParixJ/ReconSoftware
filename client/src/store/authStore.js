@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { authApi } from "../api/client.js";
+import {useDocStore} from './docStore.js'
+
 
 export const useAuthStore = create((set) => ({
   user: null,
@@ -14,7 +16,10 @@ export const useAuthStore = create((set) => ({
   },
   setUser: (user) => set({ user, status: user ? "authenticated" : "anonymous" }),
   logout: async () => {
-    try { await authApi.logout(); } finally { set({ user: null, status: "anonymous" }); }
+    try { await authApi.logout(); } 
+    finally { 
+      set({ user: null, status: "anonymous" });
+      useDocStore.getState().clearDocuments();
+    }
   },
 }));
-

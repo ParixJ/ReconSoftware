@@ -3,11 +3,12 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AuthPage from "./pages/AuthPage.jsx";
 import ReconciliationsPage from "./pages/ReconciliationsPage.jsx";
 import WorkspacePage from "./pages/WorkspacePage.jsx";
+import { Spinner } from "@/components/ui/spinner";
 import { useAuthStore } from "./store/authStore.js";
 
 function Protected({ children }) {
   const { status } = useAuthStore();
-  if (status === "checking") return <div className="app-loading"><span className="spinner" />Loading secure workspace…</div>;
+  if (status === "checking") return <div className="grid min-h-screen place-content-center gap-3 bg-background text-center text-sm text-muted-foreground"><Spinner className="mx-auto size-5 text-primary" label="Loading secure workspace" />Loading secure workspace…</div>;
   return status === "authenticated" ? children : <Navigate to="/auth" replace />;
 }
 

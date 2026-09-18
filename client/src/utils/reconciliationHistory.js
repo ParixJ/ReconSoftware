@@ -1,4 +1,5 @@
 const VALID_PERIOD = /^(0[1-9]|1[0-2])\d{4}$/;
+const VALID_PERIOD_RANGE = /^((?:0[1-9]|1[0-2])\d{4})-((?:0[1-9]|1[0-2])\d{4})$/;
 const SUMMARY_FIELDS = ["totalChecks", "matched", "mismatched", "exceptions", "highRisk", "totalAbsoluteDifference"];
 
 function normalizeGstin(value) {
@@ -23,6 +24,11 @@ function periodsFor(reconciliation) {
   return result.returnPeriod ? [result] : [];
 }
 
+function periodSortValue(returnPeriod) {
+  const start = String(returnPeriod || "").match(/^(0[1-9]|1[0-2])(\d{4})/) || [];
+  return start.length ? Number(`${start[2]}${start[1]}`) : Number.MAX_SAFE_INTEGER;
+}
+
 function clientGstinForPeriod(reconciliation, periodResult) {
   const documents = Array.isArray(periodResult.documents) ? periodResult.documents : [];
   const selectedIds = new Set(Array.isArray(reconciliation.documentIds) ? reconciliation.documentIds : []);
@@ -45,16 +51,18 @@ export function indexReconciliationHistory(reconciliations) {
 
   for (const reconciliation of newestFirst) {
     for (const periodResult of periodsFor(reconciliation)) {
-      if (!VALID_PERIOD.test(periodResult.returnPeriod || "")) continue;
+      const range = String(periodResult.returnPeriod || "").match(VALID_PERIOD_RANGE);
+      if (!VALID_PERIOD.test(periodResult.returnPeriod || "") && !range) continue;
       const gstin = clientGstinForPeriod(reconciliation, periodResult);
       if (!gstin) continue;
-      const year = periodResult.returnPeriod.slice(2);
+      const sortPeriod = range ? range[1] : periodResult.returnPeriod;
+      const year = sortPeriod.slice(2);
       if (!grouped.has(gstin)) grouped.set(gstin, new Map());
       const clientYears = grouped.get(gstin);
       if (!clientYears.has(year)) clientYears.set(year, new Map());
-      const monthlyResults = clientYears.get(year);
-      if (!monthlyResults.has(periodResult.returnPeriod)) {
-        monthlyResults.set(periodResult.returnPeriod, {
+      const periodResults = clientYears.get(year);
+      if (!periodResults.has(periodResult.returnPeriod)) {
+        periodResults.set(periodResult.returnPeriod, {
           ...periodResult,
           clientGstin: gstin,
           status: periodResult.status || reconciliation.status,
@@ -67,9 +75,9 @@ export function indexReconciliationHistory(reconciliations) {
 
   return Object.fromEntries([...grouped.entries()].map(([gstin, years]) => [
     gstin,
-    Object.fromEntries([...years.entries()].map(([year, months]) => [
+    Object.fromEntries([...years.entries()].map(([year, periods]) => [
       year,
-      [...months.values()].sort((left, right) => Number(left.returnPeriod.slice(0, 2)) - Number(right.returnPeriod.slice(0, 2))),
+      [...periods.values()].sort((left, right) => periodSortValue(left.returnPeriod) - periodSortValue(right.returnPeriod)),
     ])),
   ]));
 }
@@ -92,6 +100,7 @@ export function buildYearReconciliation(gstin, year, periods) {
   return {
     id: `history-${gstin}-${year}-${sourceIds.join("-")}`,
     status,
+    exportScope: { year },
     documentIds: documents.map((item) => item.id),
     createdAt,
     result: {
@@ -103,7 +112,7 @@ export function buildYearReconciliation(gstin, year, periods) {
       comparisons: periods.flatMap((item) => item.comparisons || []),
       exceptions: periods.flatMap((item) => item.exceptions || []),
       suggestions,
-      methodology: `Latest saved reconciliation for each available monthly return period in ${year}.`,
+      methodology: `Latest saved reconciliation for each available filed return period in ${year}.`,
     },
   };
 }

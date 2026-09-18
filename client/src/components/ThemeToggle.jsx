@@ -1,4 +1,5 @@
 import { Moon, Sun } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useThemeStore } from "../store/themeStore.js";
 
 export default function ThemeToggle() {
@@ -8,8 +9,8 @@ export default function ThemeToggle() {
   const label = `Switch to ${isDark ? "light" : "dark"} mode`;
 
   return (
-    <button className="icon-button theme-toggle" type="button" onClick={toggleTheme} aria-label={label} title={label}>
-      {isDark ? <Sun size={18} /> : <Moon size={18} />}
-    </button>
+    <Button variant="ghost" size="icon" type="button" onClick={toggleTheme} aria-label={label} title={label}>
+      {isDark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+    </Button>
   );
 }

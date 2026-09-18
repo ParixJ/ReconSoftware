@@ -1,5 +1,7 @@
-import { CircleUserRound, LogOut, Scale } from "lucide-react";
+import { CircleUserRound, LogOut } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "../store/authStore.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 
@@ -8,22 +10,31 @@ export default function TopNav() {
   const logout = useAuthStore((state) => state.logout);
   const location = useLocation();
   const onHome = location.pathname.startsWith("/home");
+  const navClass = (active) => cn(
+    "flex h-10 items-center border-b-2 border-transparent px-2 text-sm text-muted-foreground transition-colors hover:text-foreground sm:px-3",
+    active && "border-primary text-foreground",
+  );
+
   return (
-    <header className="topnav">
-      <div className="topnav-inner">
-        <Link className="brand brand-small" to="/home"><span className="brand-mark"><Scale size={18} /></span><span>ReconSoft</span></Link>
-        <nav aria-label="Primary navigation">
-          <Link to="/home" className={onHome && location.hash !== "#documents" ? "nav-active" : ""} aria-current={onHome && location.hash !== "#documents" ? "page" : undefined}>Home</Link>
-          <Link to="/home#documents" className={onHome && location.hash === "#documents" ? "nav-active" : ""} aria-current={onHome && location.hash === "#documents" ? "page" : undefined}>Documents</Link>
-          <Link to="/reconciliations" className={location.pathname === "/reconciliations" ? "nav-active" : ""} aria-current={location.pathname === "/reconciliations" ? "page" : undefined}>Reconciliations</Link>
+    <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+      <div className="mx-auto flex min-h-14 w-full max-w-[1600px] items-center gap-3 px-3 sm:px-5 lg:px-8">
+        <Link className="flex shrink-0 items-center gap-2 text-base text-foreground" to="/home">
+          <span className="hidden sm:inline">ReconSoft</span>
+        </Link>
+        <nav className="flex min-w-0 flex-1 items-center" aria-label="Primary navigation">
+          <Link to="/home" className={navClass(onHome && location.hash !== "#documents")} aria-current={onHome && location.hash !== "#documents" ? "page" : undefined}>Home</Link>
+          <Link to="/home#documents" className={navClass(onHome && location.hash === "#documents")} aria-current={onHome && location.hash === "#documents" ? "page" : undefined}>Documents</Link>
+          <Link to="/reconciliations" className={navClass(location.pathname === "/reconciliations")} aria-current={location.pathname === "/reconciliations" ? "page" : undefined}>Reconciliations</Link>
         </nav>
-        <div className="topnav-actions">
+        <div className="flex shrink-0 items-center gap-1">
           <ThemeToggle />
-          <div className="user-menu"><CircleUserRound size={19} /><span><strong>{user?.name}</strong><small>{user?.email}</small></span></div>
-          <button className="icon-button" onClick={logout} aria-label="Sign out" title="Sign out"><LogOut size={18} /></button>
+          <div className="hidden items-center gap-2 px-2 text-sm text-muted-foreground lg:flex">
+            <CircleUserRound className="size-[18px]" aria-hidden="true" />
+            <span className="flex max-w-48 flex-col leading-tight"><span className="truncate text-foreground">{user?.name}</span><small className="truncate text-xs">{user?.email}</small></span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={logout} aria-label="Sign out" title="Sign out"><LogOut aria-hidden="true" /></Button>
         </div>
       </div>
     </header>
   );
 }
-

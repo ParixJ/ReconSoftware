@@ -1,33 +1,80 @@
 import { useRef, useState } from "react";
 import { FileJson2, FileSpreadsheet, FileText, UploadCloud } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+import {useDocStore} from "../store/docStore.js";
+import config from '../lib/config.js';
+import Notice from './Notice.jsx';
+import { ERROR_CODES } from "../api/errors.js";
 
 export default function UploadPanel({ onUpload, uploading, progress }) {
   const inputRef = useRef(null);
   const [dragging, setDragging] = useState(false);
-  const choose = (files) => { if (files?.length) onUpload(files); };
-
+  const documents = useDocStore((s)=>s.documents);
+  const [uploadError, setUploadError] = useState(null);
+  const choose = (files) => {
+    if(files.length){
+      setUploadError(null)
+      if((files.length>config.MAX_FILES_UPLOADED || (files.length+documents.length)>config.MAX_FILES_UPLOADED)){
+        setUploadError({ code: ERROR_CODES.DOCUMENT_STORAGE_LIMIT_EXCEEDED, message: `File upload and storage exceeds the limit of ${config.MAX_FILES_UPLOADED}` });
+      }else{
+        onUpload(files);
+      }
+    }
+  };
   return (
-    <section className="panel upload-panel" aria-labelledby="upload-heading">
-      <div className="section-heading compact-heading">
-        <div><h2 id="upload-heading">Add return documents</h2></div>
-        <span className="section-helper">Up to 100 files · 2 MB each</span>
-      </div>
-      <div
-        className={`dropzone ${dragging ? "dropzone-active" : ""}`}
-        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => { event.preventDefault(); setDragging(false); choose(event.dataTransfer.files); }}
-      >
-        <input ref={inputRef} className="visually-hidden" type="file" multiple accept=".pdf,.xlsx,.csv,.json,application/pdf,application/json" onChange={(event) => { choose(event.target.files); event.target.value = ""; }} />
-        <span className="upload-icon"><UploadCloud size={24} /></span>
-        <div><strong>{uploading ? `Uploading and extracting… ${progress}%` : "Drop GST returns or sales registers here"}</strong><p>File format and document type are detected automatically</p></div>
-        <button className="button button-secondary" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>{uploading ? "Processing" : "Browse files"}</button>
-      </div>
-      {uploading ? <div className="progress-track" aria-label={`Upload ${progress}% complete`}><span style={{ width: `${progress}%` }} /></div> : null}
-      <div className="format-list" aria-label="Supported formats">
-        <span><FileText size={15} />PDF</span><span><FileSpreadsheet size={15} />XLSX</span><span><FileSpreadsheet size={15} />CSV</span><span><FileJson2 size={15} />JSON</span>
-      </div>
-    </section>
+    <Card aria-labelledby="upload-heading" className="w-full gap-4">
+      {uploadError?<div className="mt-4"><Notice tone="warning" title="File upload failed" onClose={() => setUploadError(null)}>{uploadError.message}</Notice></div>:null}
+      <CardHeader className="flex-row items-center justify-between gap-4">
+        <CardTitle id="upload-heading" className="text-lg">Add return documents</CardTitle>
+        <span className="text-xs text-muted-foreground">Up to {config.MAX_FILES_UPLOADED} files · {config.MAX_UPLOAD_BYTES/1024} MB each</span>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div
+          className={cn(
+            "flex min-h-32 w-full flex-col items-center justify-center gap-4 border border-dashed border-input bg-muted/35 p-5 text-center transition-colors sm:flex-row sm:text-left",
+            dragging && "border-primary bg-primary/8",
+          )}
+          onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            choose(documents.length>=config.MAX_FILES_UPLOADED?[]:event.dataTransfer.files);
+          }}
+        >
+          <Input
+            ref={inputRef}
+            className="sr-only"
+            type="file"
+            multiple
+            accept=".pdf,.xlsx,.csv,.json,application/pdf,application/json"
+            onChange={(event) => {
+              choose(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <span className="grid size-11 shrink-0 place-items-center bg-background text-primary"><UploadCloud className="size-6" aria-hidden="true" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-foreground">{uploading ? `Uploading and extracting… ${progress}%` : "Drop GST returns or sales registers here"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">PDF, XLSX, CSV and JSON</p>
+          </div>
+          <Button variant="outline" type="button" onClick={() => inputRef.current?.click()} disabled={uploading|| documents.length>=config.MAX_FILES_UPLOADED}>{uploading ? "Processing" : "Browse files"}</Button>
+        </div>
+        {uploading ? <Progress value={progress} aria-label={`Upload ${progress}% complete`} /> : null}
+        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground" aria-label="Supported formats">
+          <span className="inline-flex items-center gap-1"><FileText className="size-3.5" aria-hidden="true" />PDF</span>
+          <span className="inline-flex items-center gap-1"><FileSpreadsheet className="size-3.5" aria-hidden="true" />XLSX</span>
+          <span className="inline-flex items-center gap-1"><FileSpreadsheet className="size-3.5" aria-hidden="true" />CSV</span>
+          <span className="inline-flex items-center gap-1"><FileJson2 className="size-3.5" aria-hidden="true" />JSON</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
-
