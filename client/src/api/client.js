@@ -39,5 +39,5 @@ export const reconciliationApi = {
     const params = typeof input === "string" ? { gstin, year: input } : { gstin, ...(input || {}) };
     return salesApi.get("/reconciliations/export", { params, responseType: "blob" });
   },
-  exportWorkbookWithRows: (gstin, input) => api.post("/reconciliations/export", { gstin, ...(input || {}) }, { responseType: "blob" }),
+  exportWorkbookWithRows: (gstin, input) => salesApi.post("/reconciliations/export", { gstin, ...(input || {}) }, { responseType: "blob" }),
 };
