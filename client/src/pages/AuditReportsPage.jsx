@@ -332,6 +332,10 @@ function ReportDetail() {
         const { data } = await scrutinyApi.getRun(reportId, selectedRunId);
         if (!active) return;
         setRun(data.run);
+        setReportData((current) => current ? {
+          ...current,
+          runs: (current.runs || []).map((item) => item.id === data.run.id ? data.run : item),
+        } : current);
         if (data.run.status === "completed") {
           setResultsLoading(true);
           try {
