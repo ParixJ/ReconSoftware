@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AuthPage from "./pages/AuthPage.jsx";
 import ReconciliationsPage from "./pages/ReconciliationsPage.jsx";
 import WorkspacePage from "./pages/WorkspacePage.jsx";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuthStore } from "./store/authStore.js";
+
+const AuditReportsPage = lazy(() => import("./pages/AuditReportsPage.jsx"));
 
 function Protected({ children }) {
   const { status } = useAuthStore();
@@ -27,6 +29,7 @@ export default function App() {
       <Route path="/auth" element={status === "authenticated" ? <Navigate to="/home" replace /> : <AuthPage />} />
       <Route path="/home/*" element={<Protected><WorkspacePage /></Protected>} />
       <Route path="/reconciliations" element={<Protected><ReconciliationsPage /></Protected>} />
+      <Route path="/scrutiny/audit-reports/*" element={<Protected><Suspense fallback={<div className="grid min-h-screen place-content-center"><Spinner label="Loading audit reports" /></div>}><AuditReportsPage /></Suspense></Protected>} />
       <Route path="/workspace/*" element={<LegacyWorkspaceRedirect />} />
       <Route path="*" element={<Navigate to={status === "authenticated" ? "/home" : "/auth"} replace />} />
     </Routes>

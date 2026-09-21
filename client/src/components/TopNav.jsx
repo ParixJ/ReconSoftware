@@ -21,10 +21,11 @@ export default function TopNav() {
         <Link className="flex shrink-0 items-center gap-2 text-base text-foreground" to="/home">
           <span className="hidden sm:inline">ReconSoft</span>
         </Link>
-        <nav className="flex min-w-0 flex-1 items-center" aria-label="Primary navigation">
+        <nav className="flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap" aria-label="Primary navigation">
           <Link to="/home" className={navClass(onHome && location.hash !== "#documents")} aria-current={onHome && location.hash !== "#documents" ? "page" : undefined}>Home</Link>
           <Link to="/home#documents" className={navClass(onHome && location.hash === "#documents")} aria-current={onHome && location.hash === "#documents" ? "page" : undefined}>Documents</Link>
           <Link to="/reconciliations" className={navClass(location.pathname === "/reconciliations")} aria-current={location.pathname === "/reconciliations" ? "page" : undefined}>Reconciliations</Link>
+          <Link to="/scrutiny/audit-reports" className={navClass(location.pathname.startsWith("/scrutiny/audit-reports"))} aria-current={location.pathname.startsWith("/scrutiny/audit-reports") ? "page" : undefined}>Audit reports</Link>
         </nav>
         <div className="flex shrink-0 items-center gap-1">
           <ThemeToggle />
