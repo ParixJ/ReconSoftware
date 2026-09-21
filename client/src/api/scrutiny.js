@@ -21,6 +21,7 @@ export const AUDIT_CHECKS = [
   ["B04", "Dormant balances"],
   ["P01", "Prior-year comparison"],
   ["AIS01", "AIS income comparison"],
+  ["AIS02", "AIS GST-turnover control"],
 ];
 
 export const REVIEW_DECISIONS = [
@@ -85,4 +86,12 @@ export function parsedRows(parsed) {
 
 export function parsedFields(parsed) {
   return [...new Set(parsedRows(parsed).flatMap((record) => Object.keys(record)))];
+}
+
+export function latestReviewFor(reviews, resultId) {
+  return reviews.reduce((latest, review) => {
+    if (review.resultId !== resultId) return latest;
+    if (!latest || String(review.createdAt || "") >= String(latest.createdAt || "")) return review;
+    return latest;
+  }, null);
 }

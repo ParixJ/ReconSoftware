@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { api } from "../src/api/client.js";
-import { buildReportRequest, buildRunRequest, buildSourceUploadForm, isTerminalRun, parsedFields, parsedRows, scrutinyApi } from "../src/api/scrutiny.js";
+import { AUDIT_CHECKS, buildReportRequest, buildRunRequest, buildSourceUploadForm, isTerminalRun, latestReviewFor, parsedFields, parsedRows, scrutinyApi } from "../src/api/scrutiny.js";
 
 test("scrutiny request builders preserve the public API fields", () => {
+  assert.deepEqual(AUDIT_CHECKS.map(([id]) => id), ["B01", "B02", "B03", "B04", "P01", "AIS01", "AIS02"]);
   assert.deepEqual(buildReportRequest({ name: "  Annual audit ", fiscalYear: " 2024-2025 ", taxpayerId: " ab123 " }), {
     name: "Annual audit", fiscalYear: "2024-2025", taxpayerId: "AB123",
   });
@@ -32,6 +33,17 @@ test("parsed rows expose heterogeneous columns and run terminal states", () => {
   assert.equal(isTerminalRun("completed"), true);
   assert.equal(isTerminalRun("failed"), true);
   assert.equal(isTerminalRun("running"), false);
+});
+
+test("review history resolves the latest event for each finding", () => {
+  const reviews = [
+    { resultId: "one", decision: "confirmed", createdAt: "2026-09-22T10:00:00.000Z" },
+    { resultId: "two", decision: "dismissed", createdAt: "2026-09-22T11:00:00.000Z" },
+    { resultId: "one", decision: "needs_follow_up", createdAt: "2026-09-22T12:00:00.000Z" },
+  ];
+  assert.equal(latestReviewFor(reviews, "one")?.decision, "needs_follow_up");
+  assert.equal(latestReviewFor([...reviews].reverse(), "one")?.decision, "needs_follow_up");
+  assert.equal(latestReviewFor(reviews, "missing"), null);
 });
 
 test("scrutiny endpoints use the authenticated shared API client and nested paths", async () => {

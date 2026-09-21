@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { errorMessage } from "../api/client.js";
-import { AUDIT_CHECKS, REVIEW_DECISIONS, SOURCE_ROLES, isTerminalRun, parsedFields, parsedRows, scrutinyApi } from "../api/scrutiny.js";
+import { AUDIT_CHECKS, REVIEW_DECISIONS, SOURCE_ROLES, isTerminalRun, latestReviewFor, parsedFields, parsedRows, scrutinyApi } from "../api/scrutiny.js";
 import Notice from "../components/Notice.jsx";
 import TopNav from "../components/TopNav.jsx";
 
@@ -189,6 +189,7 @@ function SourcesPanel({ reportId, sources, onRefresh, selectedSourceIds, onSelec
       const { data } = await scrutinyApi.uploadSource(reportId, file, role, completeExport);
       uploaded = true;
       setFile(null);
+      setCompleteExport(false);
       formElement.reset();
       onActiveSourceChange(data.source.id);
       await onRefresh();
@@ -257,13 +258,13 @@ function ReviewForm({ reportId, runId, result, review, onSaved }) {
 }
 
 function RunResults({ reportId, run, results, reviews, sources, loading, error, onReviewSaved, onInspectSource }) {
-  if (run.status === "failed") return <Notice tone="danger" title="Run failed">{run.error || run.failure || "The selected checks could not complete."}</Notice>;
+  if (run.status === "failed") return <Notice tone="danger" title="Run failed">{run.error?.message || run.failure || "The selected checks could not complete."}</Notice>;
   if (run.status !== "completed") return <p role="status" className="text-sm text-muted-foreground">Run is <Status value={run.status} />. Results will appear when processing finishes.</p>;
   if (loading) return <PanelLoading label="Loading findings" />;
   if (error) return null;
   if (!results.length) return <p className="text-sm text-muted-foreground">This completed run has no results.</p>;
   return <div className="space-y-4">{results.map((result) => {
-    const review = reviews.find((item) => item.resultId === result.id);
+    const review = latestReviewFor(reviews, result.id);
     return <section key={result.id} className="space-y-3 border border-border bg-background p-4" aria-label={`${result.checkId} result`}>
       <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{result.checkId}</Badge><span className="text-sm text-muted-foreground">{checkLabel[result.checkId]}</span><Status value={result.status} /></div>
       <p className="text-sm">{result.summary}</p>
@@ -406,7 +407,7 @@ function ReportDetail() {
         {!runs.length ? <p className="text-sm text-muted-foreground">No runs yet. Select a source and at least one check.</p> : <div className="space-y-2"><Label htmlFor="audit-run-history">Run history</Label><select id="audit-run-history" className="h-9 w-full max-w-xl rounded-sm border border-input bg-background px-3 text-sm" value={selectedRunId} onChange={(event) => setSelectedRunId(event.target.value)}>{runs.map((item) => <option key={item.id} value={item.id}>{formatDate(item.createdAt)} · {item.status} · {item.checkIds?.join(", ")}</option>)}</select></div>}
         {selectedRunId && !run && !runError ? <PanelLoading label="Loading run" /> : null}
         {runError ? <Notice tone="danger" title="Run unavailable">{runError}</Notice> : null}
-        {run ? <div className="space-y-4"><p className="text-sm">Status: <Status value={run.status} /> · {run.checkIds?.join(", ")}</p>{resultsError ? <Notice tone="danger" title="Results unavailable">{resultsError}<Button className="ml-2" variant="outline" size="sm" onClick={() => setResultsReload((value) => value + 1)}>Retry</Button></Notice> : null}<RunResults reportId={reportId} run={run} results={results} reviews={reviews} sources={sources} loading={resultsLoading} error={resultsError} onReviewSaved={(review) => setReviews((current) => [...current.filter((item) => item.resultId !== review.resultId), review])} onInspectSource={(id) => { setActiveSourceId(id); document.getElementById("sources-heading")?.scrollIntoView({ behavior: "smooth" }); }} /></div> : null}
+        {run ? <div className="space-y-4"><p className="text-sm">Status: <Status value={run.status} /> · {run.checkIds?.join(", ")}</p>{resultsError ? <Notice tone="danger" title="Results unavailable">{resultsError}<Button className="ml-2" variant="outline" size="sm" onClick={() => setResultsReload((value) => value + 1)}>Retry</Button></Notice> : null}<RunResults reportId={reportId} run={run} results={results} reviews={reviews} sources={sources} loading={resultsLoading} error={resultsError} onReviewSaved={(review) => setReviews((current) => [...current, review])} onInspectSource={(id) => { setActiveSourceId(id); document.getElementById("sources-heading")?.scrollIntoView({ behavior: "smooth" }); }} /></div> : null}
       </CardContent></Card>
     </> : null}
   </main>;
