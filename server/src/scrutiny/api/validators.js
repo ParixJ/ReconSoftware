@@ -91,12 +91,20 @@ function validatedRequest(schema, body, code, message) {
 }
 
 export function validateCreateAuditReportRequest(body) {
-  const normalized = plainObject(body) ? { ...body, name: typeof body.name === "string" ? body.name.trim() : body.name } : body;
+  const normalized = plainObject(body) ? { ...body,
+    name: typeof body.name === "string" ? body.name.trim() : body.name,
+    ...(typeof body.taxpayerId === "string" ? { taxpayerId: body.taxpayerId.trim().toUpperCase() } : {}),
+  } : body;
   return validatedRequest(CREATE_AUDIT_REPORT_REQUEST_SCHEMA, normalized, "INVALID_AUDIT_REPORT", "Provide a report name and a consecutive YYYY-YYYY fiscal year.");
 }
 
 export function validateUploadAuditSourceMetadata(body) {
-  return validatedRequest(UPLOAD_AUDIT_SOURCE_METADATA_SCHEMA, body, "INVALID_AUDIT_SOURCE_ROLE", "Choose a supported audit source role.");
+  const normalized = plainObject(body) ? { ...body,
+    ...(body.completeExport === "true" ? { completeExport: true }
+      : body.completeExport === "false" ? { completeExport: false } : {}),
+  } : body;
+  return validatedRequest(UPLOAD_AUDIT_SOURCE_METADATA_SCHEMA, normalized,
+    "INVALID_AUDIT_SOURCE_ROLE", "Choose a supported audit source role and completeness declaration.");
 }
 
 export function validateCreateAuditRunRequest(body) {

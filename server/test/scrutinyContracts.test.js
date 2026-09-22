@@ -16,7 +16,7 @@ function rejectedWith(code, fn) {
 
 test("request contracts expose only the agreed scrutiny roles and checks", () => {
   assert.deepEqual(AUDIT_SOURCE_ROLES, ["books_vouchers", "books_ledgers", "trial_balance", "prior_year_trial_balance", "ais"]);
-  assert.deepEqual(AUDIT_CHECK_IDS, ["B01", "B02", "B03", "B04", "P01", "AIS01"]);
+  assert.deepEqual(AUDIT_CHECK_IDS, ["B01", "B02", "B03", "B04", "P01", "AIS01", "AIS02"]);
   assert.deepEqual(CREATE_AUDIT_REPORT_REQUEST_SCHEMA.required, ["name", "fiscalYear"]);
   assert.deepEqual(CREATE_AUDIT_RUN_REQUEST_SCHEMA.required, ["selectedSourceIds", "checkIds"]);
 });

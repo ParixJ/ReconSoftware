@@ -7,13 +7,17 @@ export function notFound(_req, _res, next) {
   next(new AppError(404, ERROR_CODES.NOT_FOUND, "The requested resource was not found."));
 }
 
-export function errorHandler(error, _req, res, _next) {
+export function errorHandler(error, req, res, _next) {
   let normalized = error;
   if (error instanceof multer.MulterError) {
     const messages = {
-      LIMIT_FILE_SIZE: "Each document must be 2 MB or smaller.",
-      LIMIT_FILE_COUNT: "Upload no more than 100 documents at once.",
-      LIMIT_UNEXPECTED_FILE: "Use the files field to upload documents.",
+      LIMIT_FILE_SIZE: req.originalUrl?.startsWith("/api/scrutiny/")
+        ? "Each audit source must be 25 MB or smaller."
+        : "Each document must be 2 MB or smaller.",
+      LIMIT_FILE_COUNT: req.originalUrl?.startsWith("/api/scrutiny/")
+        ? "Upload one audit source at a time." : "Upload no more than 100 documents at once.",
+      LIMIT_UNEXPECTED_FILE: req.originalUrl?.startsWith("/api/scrutiny/")
+        ? "Use the file field to upload one audit source." : "Use the files field to upload documents.",
     };
     normalized = new AppError(400, isErrorCode(error.code) ? error.code : ERROR_CODES.UPLOAD_FAILED, messages[error.code] || "The upload could not be accepted.");
   } else if (error.type === "entity.parse.failed") {

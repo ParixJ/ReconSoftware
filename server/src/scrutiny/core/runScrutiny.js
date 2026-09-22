@@ -1,9 +1,14 @@
 import { fromPaise, toPaise } from "./money.js";
 
-export const AUDIT_CHECK_IDS = Object.freeze(["B01", "B02", "B03", "B04", "P01", "AIS01"]);
+export const AUDIT_CHECK_IDS = Object.freeze(["B01", "B02", "B03", "B04", "P01", "AIS01", "AIS02"]);
 const COMPARABLE_AIS_CATEGORIES = new Set([
   "INTEREST", "DIVIDEND", "RENT", "BUSINESS_RECEIPTS", "OTHER_INCOME",
 ]);
+
+export function taxpayerKey(value) {
+  const identifier = String(value || "").trim().toUpperCase();
+  return identifier.length === 15 ? identifier.slice(2, 12) : identifier;
+}
 
 function result(checkId, status, summary, evidence = []) {
   return { id: checkId, checkId, status, summary, evidence };
@@ -85,10 +90,14 @@ function compareLedgerRollForward(sources) {
 
 function compareTrialBalance(sources) {
   const checkId = "B03";
-  const selection = selectedSources(sources, ["trial_balance"], checkId);
+  const selection = selectedSources(sources, ["books_ledgers", "trial_balance"], checkId);
   if (selection.error) return selection.error;
+  const ledgerSources = byRole(selection.chosen, "books_ledgers");
+  const trialSources = byRole(selection.chosen, "trial_balance");
+  if (ledgerSources.length !== 1 || trialSources.length !== 1) return insufficient(checkId,
+    "Select exactly one complete ledger export and one current trial balance.");
   const evidence = [];
-  for (const source of selection.chosen) {
+  for (const source of trialSources) {
     const openingDebit = sum(source.records, "openingDebit");
     const openingCredit = sum(source.records, "openingCredit");
     const closingDebit = sum(source.records, "closingDebit");
@@ -99,8 +108,35 @@ function compareTrialBalance(sources) {
         sourceRefs: references(source.records) });
     }
   }
+  const ledgerRows = new Map();
+  for (const row of ledgerSources[0].records) {
+    const key = row.ledger.trim().toUpperCase();
+    if (ledgerRows.has(key)) return insufficient(checkId, "Duplicate ledger names prevent trial-balance mapping.");
+    ledgerRows.set(key, row);
+  }
+  const trialRows = new Map();
+  for (const row of trialSources[0].records) {
+    const key = row.ledger.trim().toUpperCase();
+    if (trialRows.has(key)) return insufficient(checkId, "Duplicate trial-balance ledgers prevent mapping.");
+    trialRows.set(key, row);
+  }
+  for (const key of new Set([...ledgerRows.keys(), ...trialRows.keys()])) {
+    const ledger = ledgerRows.get(key);
+    const trial = trialRows.get(key);
+    if (!ledger || !trial) {
+      evidence.push({ ledger: ledger?.ledger || trial?.ledger, reason: "Ledger missing from one source",
+        sourceRefs: references([ledger, trial].filter(Boolean)) });
+      continue;
+    }
+    const expected = toPaise(ledger.closingBalance);
+    const actual = signedBalance(trial, "closing");
+    if (expected !== actual) evidence.push({ ledger: ledger.ledger,
+      expectedAmount: fromPaise(expected), actualAmount: fromPaise(actual),
+      differenceAmount: fromPaise(actual - expected), sourceRefs: references([ledger, trial]) });
+  }
   return result(checkId, evidence.length ? "difference" : "matched",
-    evidence.length ? `${evidence.length} trial-balance control(s) differ.` : "Opening and closing trial-balance controls agree.", evidence);
+    evidence.length ? `${evidence.length} trial-balance control or ledger comparison(s) differ.` :
+      "Opening and closing controls and ledger closings agree with the trial balance.", evidence);
 }
 
 function reviewDormantBalances(sources) {
@@ -178,7 +214,7 @@ function comparePriorYear(sources) {
 }
 
 function comparisonKey(record, categoryField) {
-  return [record.taxpayerId.toUpperCase(), record[categoryField].toUpperCase(),
+  return [taxpayerKey(record.taxpayerId), record[categoryField].toUpperCase(),
     record.period.toUpperCase(), record.reference.replace(/\s+/g, " ").trim().toUpperCase()].join("\0");
 }
 
@@ -227,6 +263,43 @@ function compareAisIncome(sources) {
     `${evidence.length} comparable AIS/book-income difference(s); ${excluded} non-comparable AIS record(s) excluded.`, evidence);
 }
 
+function compareAisTurnover(sources) {
+  const checkId = "AIS02";
+  const selection = selectedSources(sources, ["ais", "books_vouchers"], checkId);
+  if (selection.error) return selection.error;
+  const aisRecords = byRole(selection.chosen, "ais").flatMap((source) => source.records)
+    .filter((record) => record.category === "EXC-GSTR3B");
+  const booksRecords = byRole(selection.chosen, "books_vouchers").flatMap((source) => source.records)
+    .filter((record) => record.taxableValue !== undefined);
+  if (!aisRecords.length || !booksRecords.length) return insufficient(checkId,
+    "AIS GST-turnover entries and explicitly tagged book taxable values are both required.");
+  const taxpayerIds = new Set([...aisRecords, ...booksRecords]
+    .map((record) => taxpayerKey(record.taxpayerId)).filter(Boolean));
+  if (taxpayerIds.size !== 1 || [...aisRecords, ...booksRecords].some((record) => !record.taxpayerId)) {
+    return insufficient(checkId, "The AIS and tagged book values must identify one taxpayer.");
+  }
+  if ([...aisRecords, ...booksRecords].some((record) => !record.period)) {
+    return insufficient(checkId, "The AIS and tagged book values must identify a period.");
+  }
+  const aisKeys = aisRecords.map((record) => `${record.period}\0${record.reference}`);
+  if (new Set(aisKeys).size !== aisKeys.length) return insufficient(checkId,
+    "Duplicate AIS GST-turnover entries need review before aggregation.");
+  const periods = new Set([...aisRecords, ...booksRecords].map((record) => record.period));
+  const evidence = [...periods].sort().map((period) => {
+    const aisPeriod = aisRecords.filter((record) => record.period === period);
+    const booksPeriod = booksRecords.filter((record) => record.period === period);
+    const aisTotal = sum(aisPeriod, "amount");
+    const booksTotal = sum(booksPeriod, "taxableValue");
+    return { taxpayerId: [...taxpayerIds][0], period, aisAmount: fromPaise(aisTotal),
+      booksTaxableValue: fromPaise(booksTotal), differenceAmount: fromPaise(aisTotal - booksTotal),
+      sourceRefs: references([...aisPeriod, ...booksPeriod]) };
+  });
+  const differs = evidence.some((entry) => entry.differenceAmount !== "0.00");
+  return result(checkId, differs ? "review" : "matched",
+    differs ? "AIS GST turnover differs from tagged book taxable values by period; review timing and tax-basis differences." :
+      "AIS GST turnover agrees with explicitly tagged book taxable values by period.", evidence);
+}
+
 const CHECKS = {
   B01: compareVoucherBalance,
   B02: compareLedgerRollForward,
@@ -234,6 +307,7 @@ const CHECKS = {
   B04: reviewDormantBalances,
   P01: comparePriorYear,
   AIS01: compareAisIncome,
+  AIS02: compareAisTurnover,
 };
 
 export function runScrutiny({ sources, checkIds = AUDIT_CHECK_IDS }) {

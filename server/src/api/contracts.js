@@ -42,4 +42,15 @@ export const API_CONTRACTS = Object.freeze({
   documentOriginal: ["GET /api/sales/document-org/:id"],
   documents: ["GET /api/sales/documents", "POST /api/sales/documents/upload", "GET /api/sales/documents/:id", "DELETE /api/sales/documents", "PUT /api/sales/documents/gstin", "DELETE /api/sales/documents/:id", "PUT /api/sales/documents/:id/mapping", "PUT /api/sales/documents/:id/view-preference"],
   reconciliations: ["GET /api/sales/reconciliations", "GET /api/sales/reconciliations/export", "GET /api/sales/reconciliations/export-data", "GET /api/sales/reconciliations/:id", "POST /api/sales/reconciliations", "POST /api/sales/reconciliations/export", "DELETE /api/sales/reconciliations/:id"],
+  scrutiny: [
+    "GET /api/scrutiny/audit-reports", "POST /api/scrutiny/audit-reports",
+    "GET /api/scrutiny/audit-reports/:reportId",
+    "POST /api/scrutiny/audit-reports/:reportId/sources",
+    "GET /api/scrutiny/audit-reports/:reportId/sources/:sourceId",
+    "GET /api/scrutiny/audit-reports/:reportId/sources/:sourceId/file",
+    "POST /api/scrutiny/audit-reports/:reportId/runs",
+    "GET /api/scrutiny/audit-reports/:reportId/runs/:runId",
+    "GET /api/scrutiny/audit-reports/:reportId/runs/:runId/results",
+    "PUT /api/scrutiny/audit-reports/:reportId/runs/:runId/results/:resultId/decision",
+  ],
 });

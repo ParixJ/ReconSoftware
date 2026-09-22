@@ -4,22 +4,22 @@ All paths are under `/api/scrutiny/audit-reports` and require the existing sessi
 
 | Method and path | Request | Successful response |
 | --- | --- | --- |
-| `POST /` | `{ "name": "FY audit", "fiscalYear": "2024-2025" }` | `201 { "auditReport": AuditReport }` |
+| `POST /` | `{ "name": "FY audit", "fiscalYear": "2024-2025", "taxpayerId": "optional PAN or GSTIN" }` | `201 { "auditReport": AuditReport }` |
 | `GET /` | none | `200 { "auditReports": AuditReport[] }` |
 | `GET /:reportId` | none | `200 { "auditReport": AuditReport, "sources": AuditSource[], "runs": AuditRun[] }` |
-| `POST /:reportId/sources` | multipart with one `file` and a `role` field | `201 { "source": AuditSource }` |
+| `POST /:reportId/sources` | multipart with one `file`, a `role` field, and `completeExport=true/false` | `201 { "source": AuditSource }` |
 | `GET /:reportId/sources/:sourceId` | none | `200 { "source": AuditSource }`, including `source.parsed` when available |
 | `GET /:reportId/sources/:sourceId/file` | none | `200` original file bytes with stored `Content-Type` and `Cache-Control: no-store` (not JSON) |
-| `POST /:reportId/runs` | `{ "selectedSourceIds": ["source-id"], "checkIds": ["B01"] }` | `201 { "run": AuditRun }` |
+| `POST /:reportId/runs` | `{ "selectedSourceIds": ["source-id"], "checkIds": ["B01"], "idempotencyKey": "optional-key" }` | `202 { "run": AuditRun }` |
 | `GET /:reportId/runs/:runId` | none | `200 { "run": AuditRun }` |
-| `GET /:reportId/runs/:runId/results` | none | `200 { "results": AuditResult[] }` |
-| `PUT /:reportId/runs/:runId/results/:resultId/decision` | `{ "decision": "needs_follow_up", "note": "Inspect original voucher" }` | `200 { "result": AuditResult }` |
+| `GET /:reportId/runs/:runId/results` | none | `200 { "results": AuditResult[], "reviews": AuditReview[] }` |
+| `PUT /:reportId/runs/:runId/results/:resultId/decision` | `{ "decision": "needs_follow_up", "note": "Inspect original voucher" }` | `200 { "review": AuditReview }` |
 
-`AuditReport` has `id`, `name`, consecutive `fiscalYear` (`YYYY-YYYY`), `createdAt`, and `updatedAt`. Timestamps are ISO UTC. `AuditSource` has `id`, `reportId`, `role`, `originalName`, `mimeType`, `sizeBytes`, `createdAt`, and `parseStatus`. Supported roles are `books_vouchers`, `books_ledgers`, `trial_balance`, `prior_year_trial_balance`, and `ais`. Source content is not a client-supplied JSON request field: the upload parser produces `source.parsed`, which includes provenance, normalized records, completeness status, and issues. `parseStatus` may be `ready`, `review`, `insufficient_data`, or `failed`.
+`AuditReport` has `id`, `name`, optional `taxpayerId` (PAN or GSTIN), consecutive `fiscalYear` (`YYYY-YYYY`), `createdAt`, and `updatedAt`. Timestamps are ISO UTC. `AuditSource` includes `id`, `reportId`, `role`, `originalName`, `mimeType`, `fileType`, `sizeBytes`, `sha256`, `parserVersion`, `createdAt`, `parseStatus`, and parsing issues. Supported roles are `books_vouchers`, `books_ledgers`, `trial_balance`, `prior_year_trial_balance`, and `ais`. Upload one file at a time, at most 25 MB. Declare `completeExport=true` only for a complete source; without it, clean matches are withheld. The parser produces `source.parsed` with normalized records and provenance. PDF uploads are evidence-only and remain `insufficient_data` until a validated adapter exists.
 
-`AuditRun` has `id`, `reportId`, `status`, selected source IDs, check IDs, and `createdAt`; it may include `startedAt`, `completedAt`, and `failure`. Status is `queued`, `running`, `completed`, or `failed`. Check IDs are `B01`, `B02`, `B03`, `B04`, `P01`, and `AIS01`. A run is an immutable selection snapshot; starting another run does not overwrite earlier findings or reviewer decisions.
+`AuditRun` has `id`, `reportId`, `status`, selected source IDs, check IDs, and `createdAt`; it may include `startedAt`, `finishedAt`, `error`, and results on detail fetch. Status is `queued`, `running`, `completed`, or `failed`. Check IDs are `B01`, `B02`, `B03`, `B04`, `P01`, `AIS01`, and `AIS02`. AIS02 compares AIS `EXC-GSTR3B` GST-turnover entries with explicitly tagged book taxable values; a difference calls for review rather than a statutory conclusion. A run is an immutable selection snapshot; an optional `idempotencyKey` prevents duplicate creation for a repeated command. Starting another run does not overwrite earlier findings or reviewer decisions.
 
-`AuditResult` has `id`, `runId`, `checkId`, `status`, and `summary`. Status is `matched`, `difference`, `review`, or `insufficient_data`. Optional `expectedAmount`, `actualAmount`, and `differenceAmount` are decimal strings, never JSON numbers. Optional `evidence` points to source records. Reviewer decisions are `confirmed`, `dismissed`, or `needs_follow_up`; the server, not the request, supplies reviewer identity and decision time. Missing or incomplete comparison data must result in `insufficient_data`, never a synthetic match.
+`AuditResult` has `id`, `runId`, `checkId`, `status`, and `summary`. Status is `matched`, `difference`, `review`, or `insufficient_data`. Optional `expectedAmount`, `actualAmount`, and `differenceAmount` are decimal strings, never JSON numbers. Evidence points to source records. Reviewer decisions are append-only `AuditReview` events (`confirmed`, `dismissed`, or `needs_follow_up`); the server, not the request, supplies reviewer identity and decision time. Missing or incomplete comparison data must result in `insufficient_data`, never a synthetic match.
 
 Input validation rejects unknown fields, unsupported roles/checks/decisions, empty or duplicate selections, invalid fiscal years, and oversized names/notes. Route handlers must also verify that every selected source belongs to the report and authenticated user, and that a decision targets a result belonging to the specified run. The contract validators do not replace those persistence checks.
 

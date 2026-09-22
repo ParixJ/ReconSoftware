@@ -1,0 +1,15 @@
+{
+  "financialYear": "2025-2026",
+  "taxpayerId": "ABCDE1234F",
+  "completeExport": true,
+  "vouchers": [
+    {
+      "voucherId": "DEMO-001",
+      "date": "2025-04-15",
+      "postings": [
+        { "ledger": "Bank", "side": "debit", "amount": "100.00" },
+        { "ledger": "Interest Income", "side": "credit", "amount": "100.00", "incomeAmount": "100.00", "incomeCategory": "INTEREST", "period": "2025-04", "reference": "BANK-INT-APR" }
+      ]
+    }
+  ]
+}

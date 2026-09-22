@@ -72,6 +72,37 @@ test("B01 through B04 compare exact balances and flag review candidates", () => 
   assert.deepEqual(results.map((item) => item.id), ["B01", "B02", "B03", "B04"]);
 });
 
+test("B03 catches book-ledger differences even when the trial balance balances internally", () => {
+  const ledgers = source("l", "books_ledgers", [
+    { ledger: "Bank", openingBalance: "0.00", debits: "10.00", credits: "0.00", closingBalance: "10.00", provenance: ref("l", 1) },
+    { ledger: "Revenue", openingBalance: "0.00", debits: "0.00", credits: "10.00", closingBalance: "-10.00", provenance: ref("l", 2) },
+  ]);
+  const trial = source("t", "trial_balance", [
+    { ledger: "Bank", openingDebit: "0.00", openingCredit: "0.00", closingDebit: "11.00", closingCredit: "0.00", provenance: ref("t", 1) },
+    { ledger: "Revenue", openingDebit: "0.00", openingCredit: "0.00", closingDebit: "0.00", closingCredit: "11.00", provenance: ref("t", 2) },
+  ]);
+  const finding = runScrutiny({ sources: [ledgers, trial], checkIds: ["B03"] }).results[0];
+  assert.equal(finding.status, "difference");
+  assert.equal(finding.evidence.length, 2);
+  assert.equal(finding.evidence[0].differenceAmount, "1.00");
+});
+
+test("voucher-level income totals are not copied to every split posting", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "scrutiny-income-"));
+  try {
+    const filePath = path.join(dir, "books.json");
+    await fs.writeFile(filePath, JSON.stringify({ completeExport: true, vouchers: [{
+      voucherId: "V1", incomeAmount: "20.00", incomeCategory: "INTEREST",
+      taxpayerId: "ABCDE1234F", period: "2025-04", reference: "R1",
+      postings: [{ ledger: "Bank", side: "debit", amount: "20.00" },
+        { ledger: "Interest", side: "credit", amount: "20.00" }],
+    }] }));
+    const parsed = await parseAuditSource({ filePath, originalName: "books.json", role: "books_vouchers", sourceId: "b" });
+    assert.equal(parsed.records.length, 2);
+    assert.ok(parsed.records.every((record) => record.incomeAmount === undefined));
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
 test("P01 compares mapped signed balances and refuses nonconsecutive years", () => {
   const current = source("current", "trial_balance", [{ ledger: "Cash", openingDebit: "10.00", openingCredit: "0.00", closingDebit: "10.00", closingCredit: "0.00", provenance: ref("current", 1) }], { financialYear: "2025-26" });
   const prior = source("prior", "prior_year_trial_balance", [{ ledger: "Cash", openingDebit: "8.00", openingCredit: "0.00", closingDebit: "9.99", closingCredit: "0.00", provenance: ref("prior", 1) }], { financialYear: "2024-25" });
@@ -83,7 +114,7 @@ test("P01 compares mapped signed balances and refuses nonconsecutive years", () 
 test("AIS01 compares only explicitly comparable income by taxpayer, category, period and reference", () => {
   const books = normalizeAuditRows({ role: "books_vouchers", sourceId: "b", originalName: "books.json", rows: [
     { rowNumber: 1, row: { voucherId: "V1", ledger: "Interest", side: "Cr", amount: "5.00",
-      incomeAmount: "5.00", incomeCategory: "INTEREST", taxpayerId: "ABCDE1234F", period: "2025-04", reference: "R1" } },
+      incomeAmount: "5.00", incomeCategory: "INTEREST", taxpayerId: "24ABCDE1234F1Z5", period: "2025-04", reference: "R1" } },
   ] });
   const ais = normalizeAuditRows({ role: "ais", sourceId: "a", originalName: "ais.json", rows: [
     { rowNumber: 1, row: { taxpayerId: "ABCDE1234F", category: "INTEREST", period: "2025-04", reference: "R1", amount: "5.01" } },
@@ -94,6 +125,29 @@ test("AIS01 compares only explicitly comparable income by taxpayer, category, pe
   assert.equal(finding.evidence.length, 1);
   assert.equal(finding.evidence[0].differenceAmount, "0.01");
   assert.match(finding.summary, /1 non-comparable/);
+  ais.records[0].amount = "5.00";
+  assert.equal(runScrutiny({ sources: [books, ais], checkIds: ["AIS01"] }).results[0].status, "matched");
+});
+
+test("AIS02 compares GST turnover by period so offsetting months cannot match", () => {
+  const books = normalizeAuditRows({ role: "books_vouchers", sourceId: "b", originalName: "books.json", rows: [
+    { rowNumber: 1, row: { voucherId: "V1", ledger: "Sales", side: "Cr", amount: "10.00",
+      taxableValue: "10.00", taxpayerId: "24ABCDE1234F1Z5", period: "2025-04" } },
+    { rowNumber: 2, row: { voucherId: "V2", ledger: "Sales", side: "Cr", amount: "20.00",
+      taxableValue: "20.00", taxpayerId: "24ABCDE1234F1Z5", period: "2025-05" } },
+  ] });
+  const ais = normalizeAuditRows({ role: "ais", sourceId: "a", originalName: "ais.json", rows: [
+    { rowNumber: 1, row: { taxpayerId: "ABCDE1234F", category: "EXC-GSTR3B", period: "2025-04", reference: "A1", amount: "11.00" } },
+    { rowNumber: 2, row: { taxpayerId: "ABCDE1234F", category: "EXC-GSTR3B", period: "2025-05", reference: "A2", amount: "19.00" } },
+  ] });
+  const finding = runScrutiny({ sources: [books, ais], checkIds: ["AIS02"] }).results[0];
+  assert.equal(finding.status, "review");
+  assert.deepEqual(finding.evidence.map((entry) => entry.differenceAmount), ["1.00", "-1.00"]);
+  ais.records[0].amount = "10.00";
+  ais.records[1].amount = "20.00";
+  assert.equal(runScrutiny({ sources: [books, ais], checkIds: ["AIS02"] }).results[0].status, "matched");
+  delete books.records[0].period;
+  assert.equal(runScrutiny({ sources: [books, ais], checkIds: ["AIS02"] }).results[0].status, "insufficient_data");
 });
 
 test("missing required source or incomplete source cannot match", () => {

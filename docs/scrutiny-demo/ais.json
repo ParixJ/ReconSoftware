@@ -1,0 +1,8 @@
+{
+  "financialYear": "2025-2026",
+  "taxpayerId": "ABCDE1234F",
+  "completeExport": true,
+  "transactions": [
+    { "taxpayerId": "ABCDE1234F", "category": "INTEREST", "period": "2025-04", "reference": "BANK-INT-APR", "amount": "100.00" }
+  ]
+}

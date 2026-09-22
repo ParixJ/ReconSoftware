@@ -1,0 +1,9 @@
+{
+  "financialYear": "2025-2026",
+  "taxpayerId": "ABCDE1234F",
+  "completeExport": true,
+  "ledgers": [
+    { "ledger": "Bank", "openingBalance": "0.00", "debits": "100.00", "credits": "0.00", "closingBalance": "100.00" },
+    { "ledger": "Interest Income", "openingBalance": "0.00", "debits": "0.00", "credits": "100.00", "closingBalance": "-100.00" }
+  ]
+}

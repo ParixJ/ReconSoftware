@@ -17,12 +17,12 @@ const REQUIRED = {
 };
 
 const MONEY_FIELDS = new Set([
-  "amount", "incomeAmount", "openingBalance", "debits", "credits", "closingBalance",
+  "amount", "incomeAmount", "taxableValue", "openingBalance", "debits", "credits", "closingBalance",
   "openingDebit", "openingCredit", "closingDebit", "closingCredit",
 ]);
 
 const ROLE_FIELDS = {
-  books_vouchers: ["voucherId", "ledger", "side", "amount", "date", "incomeAmount", "incomeCategory", "taxpayerId", "period", "reference"],
+  books_vouchers: ["voucherId", "ledger", "side", "amount", "date", "incomeAmount", "incomeCategory", "taxableValue", "taxpayerId", "period", "reference"],
   books_ledgers: ["ledger", "openingBalance", "debits", "credits", "closingBalance"],
   trial_balance: ["ledger", "openingDebit", "openingCredit", "closingDebit", "closingCredit"],
   prior_year_trial_balance: ["ledger", "openingDebit", "openingCredit", "closingDebit", "closingCredit"],
@@ -35,6 +35,7 @@ const ALIASES = {
   side: ["side", "debitcredit", "drcr"],
   amount: ["amount", "transactionamount"],
   incomeAmount: ["incomeamount", "comparableincomeamount"],
+  taxableValue: ["taxablevalue", "outwardtaxablevalue"],
   incomeCategory: ["incomecategory", "aiscategory"],
   category: ["category", "informationcategory"],
   taxpayerId: ["taxpayerid", "pan"],
@@ -100,10 +101,14 @@ function jsonRows(payload, role) {
     }
     if (role === "books_vouchers" && Array.isArray(row.postings)) {
       if (!row.postings.length) rows.push({ row: {}, rowNumber: index + 1 });
+      // A voucher-level income total must not be copied onto every posting.
+      const voucherContext = { ...row };
+      delete voucherContext.incomeAmount;
+      delete voucherContext.taxableValue;
       for (let postingIndex = 0; postingIndex < row.postings.length; postingIndex += 1) {
         const posting = row.postings[postingIndex];
         rows.push({
-          row: { ...row, ...(posting && typeof posting === "object" ? posting : {}), postings: undefined },
+          row: { ...voucherContext, ...(posting && typeof posting === "object" ? posting : {}), postings: undefined },
           rowNumber: index + 1,
           postingNumber: postingIndex + 1,
         });
@@ -205,7 +210,7 @@ export async function parseAuditSource({ filePath, originalName, role, sourceId,
       message: "The file could not be read as a canonical audit source for its assigned role." });
   }
   return normalizeAuditRows({ rows, role, sourceId, originalName, format,
-    financialYear: financialYear ?? fiscalYear ?? embeddedMetadata.financialYear,
-    taxpayerId: taxpayerId ?? embeddedMetadata.taxpayerId,
+    financialYear: embeddedMetadata.financialYear ?? financialYear ?? fiscalYear,
+    taxpayerId: embeddedMetadata.taxpayerId ?? taxpayerId,
     completeExport: completeExport ?? embeddedMetadata.completeExport ?? false });
 }
