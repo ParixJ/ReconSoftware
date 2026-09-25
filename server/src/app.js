@@ -9,10 +9,12 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 import routes from "./routes/index.js";
 import helmet from 'helmet';
 import { startAuditWorker } from "./scrutiny/services/runWorker.js";
+import { startAuditExportWorker } from "./scrutiny/services/exportService.js";
 
 export function createApp() {
   getDb();
   startAuditWorker();
+  startAuditExportWorker();
   const app = express();
   app.use(helmet());
   app.use(express.json({ limit: "1mb" }));

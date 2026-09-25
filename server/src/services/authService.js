@@ -82,7 +82,7 @@ export function resolveSession(req) {
   return publicUser(row);
 }
 
-export function removeSession(token, next) {
+export function removeSession(token, res, next) {
   if (token){
     res.session.destroy((error) => {
       return next(new Error('Could not logout'))

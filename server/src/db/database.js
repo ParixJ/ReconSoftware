@@ -115,12 +115,73 @@ export function getDb() {
         CREATE INDEX IF NOT EXISTS idx_scrutiny_sources_report_created
           ON scrutiny_sources(report_id, created_at DESC);
 
+        CREATE TABLE IF NOT EXISTS scrutiny_source_records (
+          source_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          report_id TEXT NOT NULL,
+          collection TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          record_kind TEXT,
+          ledger_key TEXT,
+          period_key TEXT,
+          reference_key TEXT,
+          record_json TEXT NOT NULL,
+          PRIMARY KEY (source_id, collection, ordinal),
+          FOREIGN KEY (source_id) REFERENCES scrutiny_sources(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (report_id) REFERENCES scrutiny_audit_reports(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_scrutiny_records_lookup
+          ON scrutiny_source_records(user_id, report_id, collection, record_kind, period_key);
+        CREATE INDEX IF NOT EXISTS idx_scrutiny_records_ledger
+          ON scrutiny_source_records(user_id, report_id, ledger_key, reference_key);
+
+        CREATE TABLE IF NOT EXISTS scrutiny_source_text_lines (
+          source_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          page_number INTEGER,
+          line_json TEXT NOT NULL,
+          PRIMARY KEY (source_id, ordinal),
+          FOREIGN KEY (source_id) REFERENCES scrutiny_sources(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_scrutiny_text_page
+          ON scrutiny_source_text_lines(source_id, page_number, ordinal);
+
+        CREATE TABLE IF NOT EXISTS scrutiny_mapping_profiles (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          role TEXT NOT NULL,
+          configuration_json TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('pending','approved')),
+          created_at TEXT NOT NULL,
+          approved_at TEXT,
+          UNIQUE (user_id, name, version),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_scrutiny_profiles_user_name
+          ON scrutiny_mapping_profiles(user_id, name, version DESC);
+
+        CREATE TABLE IF NOT EXISTS scrutiny_source_lineage (
+          source_id TEXT PRIMARY KEY,
+          origin_source_id TEXT NOT NULL,
+          supersedes_source_id TEXT,
+          profile_id TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES scrutiny_sources(id) ON DELETE CASCADE,
+          FOREIGN KEY (origin_source_id) REFERENCES scrutiny_sources(id),
+          FOREIGN KEY (supersedes_source_id) REFERENCES scrutiny_sources(id),
+          FOREIGN KEY (profile_id) REFERENCES scrutiny_mapping_profiles(id)
+        );
+
         CREATE TABLE IF NOT EXISTS scrutiny_runs (
           id TEXT PRIMARY KEY,
           report_id TEXT NOT NULL,
           user_id TEXT NOT NULL,
           selected_source_ids TEXT NOT NULL,
           check_ids TEXT NOT NULL,
+          run_params_json TEXT,
           idempotency_key TEXT,
           status TEXT NOT NULL,
           result_json TEXT,
@@ -138,6 +199,19 @@ export function getDb() {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_scrutiny_runs_idempotency
           ON scrutiny_runs(report_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
+        CREATE TABLE IF NOT EXISTS scrutiny_comparisons (
+          run_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          check_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          comparison TEXT,
+          row_json TEXT NOT NULL,
+          PRIMARY KEY (run_id, ordinal),
+          FOREIGN KEY (run_id) REFERENCES scrutiny_runs(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_scrutiny_comparisons_check
+          ON scrutiny_comparisons(run_id, check_id, ordinal);
+
         CREATE TABLE IF NOT EXISTS scrutiny_reviews (
           id TEXT PRIMARY KEY,
           run_id TEXT NOT NULL,
@@ -151,11 +225,34 @@ export function getDb() {
         );
         CREATE INDEX IF NOT EXISTS idx_scrutiny_reviews_run_result
           ON scrutiny_reviews(run_id, result_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS scrutiny_exports (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          run_ids_json TEXT NOT NULL,
+          format TEXT NOT NULL,
+          grouping TEXT NOT NULL,
+          status TEXT NOT NULL,
+          stored_name TEXT,
+          error_json TEXT,
+          lease_owner TEXT,
+          lease_until INTEGER,
+          created_at TEXT NOT NULL,
+          finished_at TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_scrutiny_exports_user_created
+          ON scrutiny_exports(user_id, created_at DESC);
       `);
       const documentColumns = database.prepare("PRAGMA table_info(documents)").all().map((column) => column.name);
       if (!documentColumns.includes("view_preference")) {
         database.exec("ALTER TABLE documents ADD COLUMN view_preference TEXT");
       }
+      const exportColumns = database.prepare("PRAGMA table_info(scrutiny_exports)").all().map((column) => column.name);
+      if (!exportColumns.includes("lease_owner")) database.exec("ALTER TABLE scrutiny_exports ADD COLUMN lease_owner TEXT");
+      if (!exportColumns.includes("lease_until")) database.exec("ALTER TABLE scrutiny_exports ADD COLUMN lease_until INTEGER");
+      const runColumns = database.prepare("PRAGMA table_info(scrutiny_runs)").all().map((column) => column.name);
+      if (!runColumns.includes("run_params_json")) database.exec("ALTER TABLE scrutiny_runs ADD COLUMN run_params_json TEXT");
       database.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(Date.now());
     });
   } catch (error) {

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { createServer } from "vite";
+import ExcelJS from "exceljs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let testDataDir;
@@ -70,6 +71,9 @@ test("auditor creates a scrutiny report, runs a check, and records a review", as
   await page.getByLabel("Taxpayer ID (optional)").fill("ABCDE1234F");
   await page.getByRole("button", { name: "Create report" }).click();
   await expect(page.getByRole("heading", { name: "Synthetic FY audit" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /B09.*Pending GST ledger balance/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Manual review checklist" })).toBeVisible();
+  await expect(page.getByText("Vouching · 8")).toBeVisible();
 
   await page.getByLabel("File", { exact: true }).setInputFiles(
     path.join(root, "docs", "scrutiny-demo", "books_vouchers.json"),
@@ -85,4 +89,14 @@ test("auditor creates a scrutiny report, runs a check, and records a review", as
   await page.getByLabel("Reviewer note").fill("Voucher postings inspected.");
   await page.getByRole("button", { name: "Save decision" }).click();
   await expect(page.getByText(/Current decision: Confirmed/)).toBeVisible();
+
+  await expect(page.getByRole("checkbox", { name: /2025-2026 · Synthetic FY audit/ })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download export" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(await download.path());
+  expect(workbook.getWorksheet("Summary").getCell("D2").value).toBe("B01");
+  expect(workbook.getWorksheet("Summary").getCell("F2").value).toContain("voucher(s) balance");
 });

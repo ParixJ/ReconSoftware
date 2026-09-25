@@ -1,8 +1,12 @@
 import { AppError } from "../../errors.js";
+import { ERROR_CODES } from "../../api/errorCodes.js";
 import {
   AUDIT_REVIEW_DECISION_REQUEST_SCHEMA,
+  CREATE_AUDIT_PROFILE_REQUEST_SCHEMA,
+  CREATE_AUDIT_EXPORT_REQUEST_SCHEMA,
   CREATE_AUDIT_REPORT_REQUEST_SCHEMA,
   CREATE_AUDIT_RUN_REQUEST_SCHEMA,
+  DERIVE_AUDIT_SOURCE_REQUEST_SCHEMA,
   SCRUTINY_RESPONSE_SCHEMAS,
   UPLOAD_AUDIT_SOURCE_METADATA_SCHEMA,
 } from "./contracts.js";
@@ -107,8 +111,90 @@ export function validateUploadAuditSourceMetadata(body) {
     "INVALID_AUDIT_SOURCE_ROLE", "Choose a supported audit source role and completeness declaration.");
 }
 
+const profileFields = new Set(["voucherId", "ledger", "side", "amount", "date", "voucherType",
+  "counterparty", "narration", "openingBalance", "debits", "credits", "closingBalance",
+  "debit", "credit",
+  "taxpayerId", "period", "reference", "incomeAmount", "incomeCategory", "taxableValue"]);
+export const AUDIT_ACCOUNT_ROLES = Object.freeze(["sales", "business_receipts", "purchases", "gst_cash_igst",
+  "gst_cash_cgst", "gst_cash_sgst", "gst_cash_cess", "gst_credit_igst",
+  "gst_credit_cgst", "gst_credit_sgst", "gst_credit_cess", "tds_receivable",
+  "tcs_receivable", "interest_income", "stock", "other"]);
+
+export function validateCreateAuditProfileRequest(body) {
+  const normalized = plainObject(body) && typeof body.name === "string" ?
+    { ...body, name: body.name.trim() } : body;
+  validatedRequest(CREATE_AUDIT_PROFILE_REQUEST_SCHEMA, normalized, "INVALID_AUDIT_PROFILE",
+    "Provide a profile name, books role, and mapping configuration.");
+  const { configuration, role } = normalized;
+  const errors = [];
+  if (!["books_vouchers", "books_ledgers"].includes(role)) errors.push("Only books roles support ledger mapping profiles.");
+  if (!plainObject(configuration)) errors.push("Configuration must be an object.");
+  else {
+    const allowed = new Set(["fields", "accountRoles", "recordsPath", "sheetNames",
+      "headerRow", "layout", "sectionMarker", "ledgerNameColumn"]);
+    for (const key of Object.keys(configuration)) if (!allowed.has(key)) errors.push(`Unknown configuration key: ${key}.`);
+    if (configuration.fields !== undefined && !plainObject(configuration.fields)) errors.push("Field mappings must be an object.");
+    if (configuration.accountRoles !== undefined && !plainObject(configuration.accountRoles)) errors.push("Account roles must be an object.");
+    for (const [field, column] of Object.entries(configuration.fields || {})) {
+      if (!profileFields.has(field) || typeof column !== "string" || !column.trim() || column.length > 160) {
+        errors.push(`Invalid field mapping: ${field}.`);
+      }
+    }
+    for (const [ledger, accountRole] of Object.entries(configuration.accountRoles || {})) {
+      if (!ledger.trim() || ledger.length > 160 || !AUDIT_ACCOUNT_ROLES.includes(accountRole) ||
+          ["__proto__", "constructor", "prototype"].includes(ledger)) errors.push(`Invalid account role: ${ledger}.`);
+    }
+    if (configuration.recordsPath !== undefined &&
+        (typeof configuration.recordsPath !== "string" || configuration.recordsPath.length > 160 ||
+          !/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[\d+\])*$/.test(configuration.recordsPath))) {
+      errors.push("The JSON records path is invalid.");
+    }
+    if (configuration.sheetNames !== undefined &&
+        (!Array.isArray(configuration.sheetNames) || configuration.sheetNames.length > 20 ||
+          configuration.sheetNames.some((name) => typeof name !== "string" || !name.trim() || name.length > 120))) {
+      errors.push("Sheet names must be a list of at most 20 names.");
+    }
+    if (configuration.headerRow !== undefined && (!Number.isSafeInteger(configuration.headerRow) ||
+        configuration.headerRow < 1 || configuration.headerRow > 1000)) errors.push("Header row must be 1 to 1000.");
+    if (configuration.layout !== undefined && !["flat", "ledger_sections"].includes(configuration.layout)) {
+      errors.push("Layout must be flat or ledger_sections.");
+    }
+    if (configuration.sectionMarker !== undefined && (typeof configuration.sectionMarker !== "string" ||
+        !configuration.sectionMarker.trim() || configuration.sectionMarker.length > 80)) {
+      errors.push("Section marker must be a short literal label.");
+    }
+    if (configuration.ledgerNameColumn !== undefined && (!Number.isSafeInteger(configuration.ledgerNameColumn) ||
+        configuration.ledgerNameColumn < 0 || configuration.ledgerNameColumn > 100)) {
+      errors.push("Ledger name column must be 0 to 100.");
+    }
+    if (JSON.stringify(configuration).length > 16_000) errors.push("Mapping configuration is too large.");
+  }
+  if (errors.length) throw new AppError(400, ERROR_CODES.INVALID_AUDIT_PROFILE, "Invalid mapping profile.",
+    { issues: errors.map((message) => ({ path: "$.configuration", message })) });
+  return normalized;
+}
+
+export function validateDeriveAuditSourceRequest(body) {
+  return validatedRequest(DERIVE_AUDIT_SOURCE_REQUEST_SCHEMA, body, "AUDIT_SOURCE_INVALID",
+    "Provide an existing source ID and completeness declaration.");
+}
+
+export function validateCreateAuditExportRequest(body) {
+  return validatedRequest(CREATE_AUDIT_EXPORT_REQUEST_SCHEMA, body, "INVALID_AUDIT_SELECTION",
+    "Choose completed runs and a supported export format and grouping.");
+}
+
 export function validateCreateAuditRunRequest(body) {
-  return validatedRequest(CREATE_AUDIT_RUN_REQUEST_SCHEMA, body, "INVALID_AUDIT_SELECTION", "Select source files and checks for this scrutiny run.");
+  const normalized = validatedRequest(CREATE_AUDIT_RUN_REQUEST_SCHEMA, body,
+    "INVALID_AUDIT_SELECTION", "Select source files and checks for this scrutiny run.");
+  const duplicateVoucherMinAmount = normalized.parameters?.duplicateVoucherMinAmount;
+  if (duplicateVoucherMinAmount !== undefined && !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(duplicateVoucherMinAmount)) {
+    throw new AppError(400, ERROR_CODES.INVALID_AUDIT_SELECTION,
+      "Scrutiny run parameters must use nonnegative decimal rupee strings with at most two paise digits.", {
+        issues: [{ path: "$.parameters.duplicateVoucherMinAmount", message: "must be a nonnegative decimal amount" }],
+      });
+  }
+  return normalized;
 }
 
 export function validateAuditReviewDecisionRequest(body) {

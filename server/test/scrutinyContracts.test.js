@@ -15,8 +15,8 @@ function rejectedWith(code, fn) {
 }
 
 test("request contracts expose only the agreed scrutiny roles and checks", () => {
-  assert.deepEqual(AUDIT_SOURCE_ROLES, ["books_vouchers", "books_ledgers", "trial_balance", "prior_year_trial_balance", "ais"]);
-  assert.deepEqual(AUDIT_CHECK_IDS, ["B01", "B02", "B03", "B04", "P01", "AIS01", "AIS02"]);
+  assert.deepEqual(AUDIT_SOURCE_ROLES, ["books_vouchers", "books_ledgers", "trial_balance", "prior_year_trial_balance", "ais", "supporting_document"]);
+  assert.deepEqual(AUDIT_CHECK_IDS, ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "AIS01", "AIS02", "A26", "G01", "G02", "S01", "T03", "T09", "X01"]);
   assert.deepEqual(CREATE_AUDIT_REPORT_REQUEST_SCHEMA.required, ["name", "fiscalYear"]);
   assert.deepEqual(CREATE_AUDIT_RUN_REQUEST_SCHEMA.required, ["selectedSourceIds", "checkIds"]);
 });
@@ -36,9 +36,15 @@ test("source metadata and run selection reject unsupported, empty, duplicate and
   rejectedWith("INVALID_AUDIT_SOURCE_ROLE", () => validateUploadAuditSourceMetadata({ role: "ais", reportId: "other" }));
   const selection = { selectedSourceIds: ["source-1", "source-2"], checkIds: ["B01", "AIS01"] };
   assert.deepEqual(validateCreateAuditRunRequest(selection), selection);
+  const parameterized = { ...selection, parameters: { duplicateVoucherMinAmount: "25000.00" } };
+  assert.deepEqual(validateCreateAuditRunRequest(parameterized), parameterized);
   rejectedWith("INVALID_AUDIT_SELECTION", () => validateCreateAuditRunRequest({ selectedSourceIds: [], checkIds: ["B01"] }));
   rejectedWith("INVALID_AUDIT_SELECTION", () => validateCreateAuditRunRequest({ selectedSourceIds: ["s", "s"], checkIds: ["B01"] }));
   rejectedWith("INVALID_AUDIT_SELECTION", () => validateCreateAuditRunRequest({ selectedSourceIds: ["s"], checkIds: ["B99"] }));
+  rejectedWith("INVALID_AUDIT_SELECTION", () => validateCreateAuditRunRequest({ selectedSourceIds: ["s"], checkIds: ["B01"],
+    parameters: { duplicateVoucherMinAmount: "-1.00" } }));
+  rejectedWith("INVALID_AUDIT_SELECTION", () => validateCreateAuditRunRequest({ selectedSourceIds: ["s"], checkIds: ["B01"],
+    parameters: { duplicateVoucherMinAmount: "1.001" } }));
   rejectedWith("INVALID_AUDIT_SELECTION", () => validateCreateAuditRunRequest({ selectedSourceIds: ["s"], checkIds: ["B01"], ownerId: "other" }));
 });
 

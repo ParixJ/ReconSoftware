@@ -12,6 +12,7 @@ export const SOURCE_ROLES = [
   ["trial_balance", "Trial balance"],
   ["prior_year_trial_balance", "Prior-year trial balance"],
   ["ais", "AIS"],
+  ["supporting_document", "Supporting document · auto-detect"],
 ];
 
 export const AUDIT_CHECKS = [
@@ -19,9 +20,25 @@ export const AUDIT_CHECKS = [
   ["B02", "Ledger roll-forward"],
   ["B03", "Trial balance"],
   ["B04", "Dormant balances"],
+  ["B05", "Negative cash balance"],
+  ["B06", "Suspense balance"],
+  ["B07", "Debtor/creditor balance sign"],
+  ["B08", "Potential duplicate vouchers"],
+  ["B09", "Pending GST ledger balance"],
+  ["B10", "Insurance/prepaid classification"],
+  ["B11", "Prepaid reversal review"],
+  ["B20", "Voucher versus ledger-export coverage"],
   ["P01", "Prior-year comparison"],
+  ["P02", "Year-on-year ledger changes"],
   ["AIS01", "AIS income comparison"],
   ["AIS02", "AIS GST-turnover control"],
+  ["A26", "AIS versus Form 26AS candidates"],
+  ["G01", "GST portal-ledger roll-forward"],
+  ["G02", "Books versus GST cash ledger"],
+  ["S01", "Product quantity roll-forward"],
+  ["T03", "TDS/TCS book-credit review"],
+  ["T09", "Refund reference review"],
+  ["X01", "Books versus supporting sources"],
 ];
 
 export const REVIEW_DECISIONS = [
@@ -38,11 +55,12 @@ export function buildReportRequest({ name, fiscalYear, taxpayerId }) {
   };
 }
 
-export function buildSourceUploadForm(file, role, completeExport) {
+export function buildSourceUploadForm(file, role, completeExport, profileId = "") {
   const form = new FormData();
   form.append("file", file);
   form.append("role", role);
   form.append("completeExport", String(Boolean(completeExport)));
+  if (profileId) form.append("profileId", profileId);
   return form;
 }
 
@@ -58,20 +76,34 @@ export const scrutinyApi = {
   listReports: () => api.get(base),
   createReport: (values) => api.post(base, buildReportRequest(values)),
   getReport: (reportId) => api.get(reportPath(reportId)),
-  uploadSource: (reportId, file, role, completeExport) => api.post(
-    `${reportPath(reportId)}/sources`, buildSourceUploadForm(file, role, completeExport),
+  uploadSource: (reportId, file, role, completeExport, profileId) => api.post(
+    `${reportPath(reportId)}/sources`, buildSourceUploadForm(file, role, completeExport, profileId),
+    { timeout: 180000 },
   ),
   getSource: (reportId, sourceId) => api.get(sourcePath(reportId, sourceId)),
   getSourceFile: (reportId, sourceId) => api.get(`${sourcePath(reportId, sourceId)}/file`, { responseType: "blob" }),
+  getSourceRows: (reportId, sourceId, collection = "rawRows", offset = 0, limit = 100) => api.get(
+    `${sourcePath(reportId, sourceId)}/rows`, { params: { collection, offset, limit } }),
+  getSourcePreflight: (reportId, sourceId) => api.get(`${sourcePath(reportId, sourceId)}/preflight`),
+  listSourceLibrary: () => api.get(`${base}/source-library`),
+  listProfiles: () => api.get(`${base}/mapping-profiles`),
+  createProfile: (values) => api.post(`${base}/mapping-profiles`, values),
+  approveProfile: (profileId) => api.post(`${base}/mapping-profiles/${segment(profileId)}/approve`),
+  deriveSource: (reportId, values) => api.post(`${reportPath(reportId)}/sources/derive`, values),
   createRun: (reportId, selectedSourceIds, checkIds) => api.post(
     `${reportPath(reportId)}/runs`, buildRunRequest(selectedSourceIds, checkIds),
   ),
   getRun: (reportId, runId) => api.get(runPath(reportId, runId)),
   getResults: (reportId, runId) => api.get(`${runPath(reportId, runId)}/results`),
+  getComparisons: (reportId, runId, offset = 0, limit = 100) => api.get(
+    `${runPath(reportId, runId)}/comparisons`, { params: { offset, limit } }),
   setDecision: (reportId, runId, resultId, decision, note) => api.put(
     `${runPath(reportId, runId)}/results/${segment(resultId)}/decision`,
     { decision, note: note.trim() },
   ),
+  createExport: (runIds, format, grouping) => api.post(`${base}/exports`, { runIds, format, grouping }),
+  getExport: (exportId) => api.get(`${base}/exports/${segment(exportId)}`),
+  getExportFile: (exportId) => api.get(`${base}/exports/${segment(exportId)}/file`, { responseType: "blob" }),
 };
 
 export function isTerminalRun(status) {

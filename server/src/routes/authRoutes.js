@@ -24,7 +24,7 @@ router.post("/login", async (req, res, next) => {
 router.get("/me", requireAuth, (req, res) => res.json({ user: req.user }));
 
 router.post("/logout", (req, res, next) => {
-  removeSession(req.session?.[config.sessionCookie]);
+  removeSession(req.session?.[config.sessionCookie], res, next);
   res.clearCookie(config.sessionCookie, cookieOptions(0, config.express_session));
   res.status(204).end();
 });

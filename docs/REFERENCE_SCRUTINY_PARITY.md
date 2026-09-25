@@ -1,0 +1,24 @@
+# Reference scrutiny parity ledger
+
+Reference: `sample-docs/Ledger_Scrutiny_TDS_CRM_44.html` and `sample-docs/Scrutiny manual points.xlsx`. The HTML is a browser-only reference tool, not a production data or API contract. This ledger distinguishes verified output agreement from similar-looking UI or shared terminology.
+
+| Reference module | Current app path | Verification and remaining gap |
+| --- | --- | --- |
+| Main ledger findings | `B01`–`B11`, `B20` run snapshots and reviewer decisions | Suspense, pending GST and prepaid-reversal candidate counts agree with the actual HTML on a controlled browser fixture. Other reference rules, especially cash limits, provisions, RCM, rent/professional-fee TDS, expense spikes and asset capitalization, are not yet ported or compared. |
+| Insurance / prepaid | `B10`, `B11` | Account-name candidates and explicit opening/closing values are exposed with source references. Insurance policy coverage and amortization schedules are not inferred from the ledger name. |
+| GST electronic cash/credit ledgers | `G01`, `G02`, `X01`, `B09` | Portal roll-forward and mapped-book comparisons exist. The HTML's amount-only/tolerance match is deliberately not adopted: it can match another tax head or period. Full transaction-level reference reconciliation and all unmatched lines remain partial. |
+| Previous-year report and YoY | `P01`, `P02` | Consecutive-year trial balances compare opening controls and closing magnitudes. `P02` recognizes sign-convention-only changes and new/discontinued accounts. Extraction of arbitrary previous-year report PDFs and the HTML's fixed-asset schedule, activity and related-party panels is not implemented. |
+| AIS / TIS / 26AS / computation / advance tax | `AIS01`, `AIS02`, `A26`, `T03`, `T09`, `X01` | Available normalized rows and selected controls are compared. Scanned AIS remains unverified when printed controls fail. Advance-tax payment/challan reconciliation and several source sections are not implemented; the reference HTML itself primarily emits notes here, not a reliable posting-level reconciliation. |
+| Findings | Saved run results, evidence, source links, reviewer decisions | Results are persistent and exportable, but the HTML's consolidated severity-search table and exact report grouping are not replicated. |
+| Manual checklist | `ManualScrutinyChecklist` in the audit report page | All 16 groups in the HTML checklist are displayed as review procedures. There is no per-item decision workflow in the HTML or this port; the 157-row manual workbook contains additional procedures beyond the HTML's displayed subset. |
+| MSME, TDS auditor, bank/loan, full stock scrutiny | `S01` covers product quantity controls only | These reference modules are not at feature or output parity. Dedicated source models, rules, comparison fixtures and UI are still needed. |
+| Master export | Saved-run XLSX/PDF and per-FY ZIP | Does not reproduce the HTML's multi-sheet master workbook or every reference module's table. |
+
+## Current evidence
+
+- Run `SCRUTINY_REFERENCE_PARITY=1 node --test test/referenceHtmlParity.test.js` from `server` to launch the supplied HTML in a browser. The test compares three controlled-fixture candidate counts and Gayatri's suspense, pending-GST, insurance and prepaid-reversal counts against `runScrutiny`. Gayatri results agree at 0, 2, 3 and 0 respectively; this does not establish parity for the other HTML modules.
+- Run `SCRUTINY_REAL_SAMPLES=1 node --test test/scrutinyRealSamples.test.js` from `server` for authenticated upload, parsing, mapping, saved-run and supporting-file assertions against Gayatri and Ashwin. This test is opt-in because local AIS OCR takes several minutes.
+- Gayatri: 119 ledger sections and 2,762 postings. Only 38 sections contain all four explicit roll-forward controls; 81 remain unassessable for `B02`. Four potential duplicate posting groups have distinct extracted voucher IDs; two GST balances and three insurance expense ledgers are review candidates.
+- Ashwin: 308 sections and 18,010 postings. The absent balances are not invented. Duplicate, GST and prepaid findings remain review candidates and do not establish legal/tax conclusions.
+
+Exact output parity is not yet established for the whole reference software. Reference heuristics that infer OCR amounts from tax rates or match portal/books solely by amount are intentionally not copied because they conflict with the previously specified extraction and reconciliation safeguards. Parser version 4 preserves missing printed balances. Legacy paired-column sources parsed by earlier versions are flagged on read and blocked from new balance-based conclusions until a corrected source is derived from the immutable original. Previously saved runs remain immutable; derive and rerun to see new behavior.

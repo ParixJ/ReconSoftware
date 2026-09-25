@@ -17,7 +17,8 @@ async function drain() {
     while ((run = claimNextAuditRun(workerId))) {
       try {
         const sources = sourcesForAuditRun(run).map((source) => source.parsed);
-        const output = runScrutiny({ sources, checkIds: run.checkIds });
+        const output = runScrutiny({ sources, checkIds: run.checkIds,
+          reportTaxpayerId: run.reportTaxpayerId, parameters: run.parameters });
         const results = output.results.map((result) => ({ ...result, runId: run.id }));
         completeAuditRun(run.id, workerId, results);
       } catch (error) {

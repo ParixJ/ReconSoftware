@@ -1,0 +1,8 @@
+Organization:,"ASHWIN COAL TRADERS - 2025_26"
+Export scope:,"All"
+Ledger / Particulars,Check,Finding,Severity
+"26AS.pdf","Form 26AS / Annual Tax Statement","26AS / ATS loaded. Reconcile TDS credit (194Q / 194A / etc.) with books, computation, and claimed TDS in ITR.",Low
+"AIS.pdf","AIS / TIS document detected","AIS/TIS content loaded. Only income and refund entries are matched against books here — 194Q / business-receipts and TCS-206C figures are GST-turnover related and are not treated as income in this check.",Low
+"ElectronicCashLedger.pdf","GST portal ledger extract","GST Electronic Cash/Credit Ledger parsed into dated deposit / utilisation lines. Click row to see structured entries. Use Prepaid & GST ledgers → Section B for match vs books.",Low
+"ElectronicCreditLedger.pdf","GST portal ledger extract","GST Electronic Cash/Credit Ledger parsed into dated deposit / utilisation lines. Click row to see structured entries. Use Prepaid & GST ledgers → Section B for match vs books.",Low
+"TIS.pdf","Supporting file ingested","File content stored for cross-checks (4 chars extracted). Click row to view extract. Manual review may still be required.",Low
