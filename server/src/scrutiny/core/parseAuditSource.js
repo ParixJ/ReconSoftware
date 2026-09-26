@@ -14,6 +14,11 @@ import { isAuditQueryWorkbook, normalizeAuditQueryWorkbook } from "./queryWorkbo
 export const AUDIT_SOURCE_ROLES = Object.freeze([
   "books_vouchers", "books_ledgers", "trial_balance", "prior_year_trial_balance", "ais", "supporting_document",
 ]);
+export const AUDIT_SUPPORTING_DOCUMENT_TYPES = Object.freeze([
+  "ais", "tis", "form_26as", "tax_computation", "gst_cash_ledger", "gst_credit_ledger",
+  "stock_product_ledger", "audit_queries", "prior_year_report", "msme_register",
+  "bank_statement", "loan_schedule", "stock_report", "tax_challan", "tds_rules",
+]);
 
 const REQUIRED = {
   books_vouchers: ["voucherId", "ledger", "side", "amount"],
@@ -26,6 +31,12 @@ const REQUIRED = {
 const MONEY_FIELDS = new Set([
   "amount", "incomeAmount", "taxableValue", "openingBalance", "debits", "credits", "closingBalance",
   "openingDebit", "openingCredit", "closingDebit", "closingCredit",
+]);
+const GENERIC_SUPPORT_MONEY_FIELDS = new Set([
+  "amount", "invoiceAmount", "billAmount", "outstandingAmount", "balanceAmount", "unpaidAmount",
+  "openingBalance", "closingBalance", "additions", "disbursements", "borrowings", "repayments",
+  "principalRepaid", "interest", "interestAccrued", "deposit", "debit", "credit", "withdrawal",
+  "depositAmount", "withdrawalAmount", "closingValue", "value", "taxAmount",
 ]);
 
 const ROLE_FIELDS = {
@@ -61,12 +72,47 @@ const ALIASES = {
   closingDebit: ["closingdebit", "closingdr"],
   closingCredit: ["closingcredit", "closingcr"],
 };
+const SUPPORT_ALIASES = {
+  supplier: ["supplier", "vendor", "party", "partyname", "creditor"],
+  invoiceNumber: ["invoicenumber", "billnumber", "billno", "reference", "ref"],
+  reference: ["reference", "ref", "transactionreference", "documentreference", "utr", "transactionid"],
+  invoiceDate: ["invoicedate", "billdate", "date"],
+  transactionDate: ["transactiondate", "postingdate", "valuedate"],
+  dueDate: ["duedate"],
+  paymentDate: ["paymentdate", "paiddate"],
+  creditDays: ["creditdays", "termsdays"],
+  amount: ["amount", "transactionamount", "grossamount"],
+  invoiceAmount: ["invoiceamount", "billamount"],
+  outstandingAmount: ["outstandingamount", "balanceamount", "unpaidamount"],
+  isMsme: ["ismsme", "msme", "msmestatus"],
+  udyam: ["udyam", "udyamnumber", "msmeregistration", "msmenumber"],
+  item: ["item", "product", "stockitem", "description"],
+  closingQuantity: ["closingquantity", "quantity", "closingqty", "qty"],
+  closingValue: ["closingvalue", "value", "stockvalue"],
+  daysSinceLastMovement: ["dayssincelastmovement", "agedays", "stockagedays"],
+  lender: ["lender", "bank", "party", "loanaccount"],
+  openingBalance: ["openingbalance", "opening"],
+  closingBalance: ["closingbalance", "closing"],
+  additions: ["additions", "disbursements", "borrowings"],
+  repayments: ["repayments", "principalrepaid"],
+  interest: ["interest", "interestaccrued"],
+  depositAmount: ["depositamount", "deposit", "credit"],
+  withdrawalAmount: ["withdrawalamount", "withdrawal", "debit"],
+  type: ["type", "taxtype", "challantype"],
+  challanSerial: ["challanserial", "challanno", "bsrchallan"],
+  taxAmount: ["taxamount", "tdsamount"],
+  ledger: ["ledger", "ledgername", "account", "accountname"],
+  kind: ["kind", "section", "category"],
+  label: ["label", "particulars", "description"],
+};
 
 function keyOf(value) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 const canonicalField = new Map(Object.entries(ALIASES).flatMap(([name, aliases]) =>
+  aliases.map((alias) => [alias, name])));
+const supportCanonicalField = new Map(Object.entries(SUPPORT_ALIASES).flatMap(([name, aliases]) =>
   aliases.map((alias) => [alias, name])));
 
 function fieldIndex(row, profile) {
@@ -178,6 +224,70 @@ function normalizeRow(input, role, metadata, provenance, profile) {
   return output;
 }
 
+function genericRowsFromJson(payload, role) {
+  const root = Array.isArray(payload) ? { records: payload } : payload;
+  if (!root || typeof root !== "object") throw new Error("Expected an array or a JSON object containing records.");
+  const collection = root.records ?? root[role] ?? root.rows ?? root.data;
+  if (!Array.isArray(collection)) throw new Error("Expected a records array for the selected source role.");
+  return { rows: collection.map((row, index) => ({
+    row: row && typeof row === "object" && !Array.isArray(row) ? row : {},
+    rowNumber: index + 1,
+  })), metadata: { financialYear: root.financialYear ?? root.fiscalYear,
+    taxpayerId: root.taxpayerId, completeExport: root.completeExport,
+    documentType: root.documentType } };
+}
+
+function supportFieldIndex(row) {
+  const index = new Map();
+  for (const [name, value] of Object.entries(row)) {
+    const canonical = supportCanonicalField.get(keyOf(name));
+    index.set(canonical || name, value);
+  }
+  return index;
+}
+
+function normalizeSupportValue(name, value) {
+  if (!populated(value)) return undefined;
+  if (GENERIC_SUPPORT_MONEY_FIELDS.has(name)) return normalizeAmount(value);
+  return typeof value === "boolean" ? value : text(value);
+}
+
+function normalizeSupportingRows({ rows, sourceId, originalName, format, financialYear, taxpayerId,
+  completeExport = true, rawRows = null, documentType, extractionIssues = [] }) {
+  const issues = [...extractionIssues];
+  const records = [];
+  let invalidCount = 0;
+  for (const item of rows) {
+    const provenance = { sourceId, originalName, rowNumber: item.rowNumber };
+    if (item.sheetName) provenance.sheetName = item.sheetName;
+    const fields = supportFieldIndex(item.row);
+    const record = { provenance };
+    try {
+      for (const [name, value] of fields) {
+        const normalizedValue = normalizeSupportValue(name, value);
+        if (normalizedValue !== undefined) record[name] = normalizedValue;
+      }
+      records.push(record);
+    } catch (error) {
+      invalidCount += 1;
+      if (issues.length < 100) issues.push({ code: "INVALID_AUDIT_ROW",
+        rowNumber: item.rowNumber, message: error.message });
+    }
+  }
+  if (!rows.length) issues.push({ code: "EMPTY_AUDIT_SOURCE", message: "No data rows were found." });
+  if (invalidCount > 100) issues.push({ code: "AUDIT_ROW_ISSUES_TRUNCATED",
+    message: `${invalidCount} rows failed normalization; the first 100 row issues are shown.` });
+  if (completeExport !== true) issues.push({ code: "AUDIT_EXPORT_COMPLETENESS_UNCONFIRMED",
+    message: "Export completeness has not been confirmed; a clean comparison would be misleading." });
+  return { sourceId, role: "supporting_document", originalName, format,
+    financialYear: text(financialYear) || null, taxpayerId: text(taxpayerId).toUpperCase() || null,
+    completeExport: completeExport === true, documentType, status: issues.length ? "insufficient_data" : "ready",
+    recordCount: records.length, records,
+    rawRows: rawRows || rows.map((item) => ({ ...item.raw ?? item.row, provenance: {
+      sourceId, originalName, rowNumber: item.rowNumber, ...(item.sheetName ? { sheetName: item.sheetName } : {}) } })),
+    issues };
+}
+
 export function normalizeAuditRows({ rows, role, sourceId, originalName, financialYear, taxpayerId,
   completeExport = true, format = "json", profile = null, rawRows = null, extractionIssues = [] }) {
   if (!AUDIT_SOURCE_ROLES.includes(role)) throw new TypeError(`Unsupported audit source role: ${role}`);
@@ -250,8 +360,12 @@ function applyAccountRoles(parsed, profile) {
 }
 
 export async function parseAuditSource({ filePath, originalName, role, sourceId, financialYear, fiscalYear,
-  taxpayerId, completeExport, profile = null }) {
+  taxpayerId, completeExport, profile = null, documentType = null }) {
   if (!AUDIT_SOURCE_ROLES.includes(role)) throw new TypeError(`Unsupported audit source role: ${role}`);
+  if (role === "supporting_document" && documentType &&
+      !AUDIT_SUPPORTING_DOCUMENT_TYPES.includes(documentType)) {
+    throw new TypeError(`Unsupported supporting document type: ${documentType}`);
+  }
   const extension = path.extname(originalName || "").toLowerCase().slice(1);
   if (!["json", "csv", "xlsx", "xls", "xml", "pdf"].includes(extension)) return failedSource({
     sourceId, role, originalName, format: extension, code: "UNSUPPORTED_AUDIT_FORMAT",
@@ -262,9 +376,9 @@ export async function parseAuditSource({ filePath, originalName, role, sourceId,
     sourceId, role, originalName, format, code: "UNSUPPORTED_AUDIT_FORMAT",
     message: "PDF requires the AIS or supporting-document source role.",
   });
-  if (role === "supporting_document" && ["json", "csv", "xml"].includes(format)) return failedSource({
+  if (role === "supporting_document" && ["json", "csv", "xml"].includes(format) && !documentType) return failedSource({
     sourceId, role, originalName, format, code: "UNSUPPORTED_AUDIT_FORMAT",
-    message: "Supporting documents currently require PDF or an XLSX product-ledger workbook.",
+    message: "Structured supporting JSON/CSV/XML requires an explicit supporting document type.",
   });
   let rows;
   let rawRows;
@@ -278,6 +392,29 @@ export async function parseAuditSource({ filePath, originalName, role, sourceId,
       const { parseAisPdf } = await import("./aisPdf.js");
       return limitedSource(await parseAisPdf({ filePath, sourceId, originalName,
         completeExport: completeExport ?? false, financialYear: financialYear ?? fiscalYear }));
+    }
+    if (role === "supporting_document" && documentType && ["json", "csv", "xlsx", "xls"].includes(format)) {
+      if (format === "json") {
+        const payload = JSON.parse(decodeJsonText(await fs.readFile(filePath)));
+        const parsed = genericRowsFromJson(payload, role);
+        rows = parsed.rows;
+        rawRows = parsed.rawRows;
+        embeddedMetadata = parsed.metadata;
+      } else if (format === "csv") {
+        rows = tableRows(parseCsv((await fs.readFile(filePath, "utf8")).replace(/^\uFEFF/, ""), {
+          skip_empty_lines: true, bom: true, relax_column_count: false,
+        }));
+      } else {
+        const sheets = spreadsheetSheets(await fs.readFile(filePath));
+        rows = sheets.flatMap((sheet) => tableRows(sheet.matrix)
+          .map((item) => ({ ...item, sheetName: sheet.name })));
+        rawRows = rows.map((item) => item.row);
+      }
+      return limitedSource(normalizeSupportingRows({ rows, rawRows, sourceId, originalName, format,
+        financialYear: embeddedMetadata.financialYear ?? financialYear ?? fiscalYear,
+        taxpayerId: embeddedMetadata.taxpayerId ?? taxpayerId,
+        completeExport: completeExport ?? embeddedMetadata.completeExport ?? false,
+        documentType: embeddedMetadata.documentType || documentType }));
     }
     if (format === "xml") {
       if (!["books_vouchers", "books_ledgers"].includes(role)) return failedSource({ sourceId, role,

@@ -1,0 +1,58 @@
+{
+  "gstin": "24AEXPS3034H1Z6",
+  "rtnprd": "032026",
+  "docdata": {
+    "b2b": [
+      {
+        "ctin": "24ABCDE1234F1Z5",
+        "trdnm": "March Input Suppliers",
+        "supprd": "032026",
+        "inv": [
+          { "inum": "2B-0001", "idt": "01-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0002", "idt": "02-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0003", "idt": "03-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0004", "idt": "04-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0005", "idt": "05-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0006", "idt": "06-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0007", "idt": "07-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0008", "idt": "08-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0009", "idt": "09-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0010", "idt": "10-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0011", "idt": "11-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0012", "idt": "12-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0013", "idt": "13-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0014", "idt": "14-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0015", "idt": "15-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0016", "idt": "16-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0017", "idt": "17-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0018", "idt": "18-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0019", "idt": "19-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0020", "idt": "20-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0021", "idt": "21-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0022", "idt": "22-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0023", "idt": "23-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0024", "idt": "24-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0025", "idt": "25-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0026", "idt": "26-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0027", "idt": "27-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0028", "idt": "28-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0029", "idt": "29-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0030", "idt": "30-03-2026", "val": 21000, "txval": 10000, "iamt": 4000, "camt": 3500, "samt": 3500, "csamt": 0, "rev": "N" },
+          { "inum": "2B-0031", "idt": "31-03-2026", "val": 36350.33, "txval": 10000, "iamt": 11323.25, "camt": 7513.54, "samt": 7513.54, "csamt": 0, "rev": "N" },
+          { "inum": "2B-RCM-001", "idt": "31-03-2026", "val": 12222, "txval": 11640, "iamt": 0, "camt": 291, "samt": 291, "csamt": 0, "rev": "Y" }
+        ]
+      }
+    ]
+  },
+  "itcsumm": {
+    "itcavl": {
+      "nonrevsup": {
+        "txval": 310000,
+        "iamt": 131323.25,
+        "camt": 112513.54,
+        "samt": 112513.54,
+        "csamt": 0
+      }
+    }
+  }
+}

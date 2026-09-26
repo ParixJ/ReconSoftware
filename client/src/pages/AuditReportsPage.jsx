@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { errorMessage } from "../api/client.js";
-import { AUDIT_CHECKS, REVIEW_DECISIONS, SOURCE_ROLES, isTerminalRun, latestReviewFor, parsedFields, parsedRows, scrutinyApi } from "../api/scrutiny.js";
+import { AUDIT_CHECKS, REVIEW_DECISIONS, SOURCE_ROLES, SUPPORTING_DOCUMENT_TYPES, isTerminalRun, latestReviewFor, scrutinyApi } from "../api/scrutiny.js";
+import { formatFinancialValue } from "../api/scrutinyPresentation.js";
+import { FinancialEvidence, FinancialSourceView } from "../components/FinancialDataView.jsx";
 import Notice from "../components/Notice.jsx";
 import ManualScrutinyChecklist from "../components/ManualScrutinyChecklist.jsx";
 import TopNav from "../components/TopNav.jsx";
@@ -21,6 +23,9 @@ const documentTypeLabel = {
   ais: "AIS", tis: "TIS", form_26as: "Form 26AS", tax_computation: "Prior-year tax computation",
   gst_cash_ledger: "GST cash ledger", gst_credit_ledger: "GST credit ledger",
   stock_product_ledger: "Product ledger", audit_queries: "Audit queries",
+  prior_year_report: "Prior-year audit report", msme_register: "MSME register",
+  bank_statement: "Bank statement", loan_schedule: "Loan schedule",
+  stock_report: "Stock report", tax_challan: "Tax challans", tds_rules: "TDS rules",
 };
 const checkLabel = Object.fromEntries(AUDIT_CHECKS);
 const decisionLabel = Object.fromEntries(REVIEW_DECISIONS);
@@ -131,9 +136,6 @@ function SourceDetail({ reportId, source }) {
   const [fileLoading, setFileLoading] = useState(false);
   const [fileUrl, setFileUrl] = useState("");
   const [fileType, setFileType] = useState("");
-  const [rawRows, setRawRows] = useState([]);
-  const [rawTotal, setRawTotal] = useState(0);
-  const [rawOffset, setRawOffset] = useState(0);
   const [preflight, setPreflight] = useState(null);
 
   useEffect(() => {
@@ -148,14 +150,6 @@ function SourceDetail({ reportId, source }) {
 
   useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
   useEffect(() => { setFileUrl(""); setFileError(""); }, [source.id]);
-  useEffect(() => { setRawOffset(0); }, [source.id]);
-  useEffect(() => {
-    let active = true;
-    scrutinyApi.getSourceRows(reportId, source.id, "rawRows", rawOffset, 100)
-      .then(({ data }) => { if (active) { setRawRows(data.rows || []); setRawTotal(data.total || 0); } })
-      .catch(() => { if (active) { setRawRows([]); setRawTotal(0); } });
-    return () => { active = false; };
-  }, [reportId, source.id, rawOffset]);
   useEffect(() => {
     let active = true;
     scrutinyApi.getSourcePreflight(reportId, source.id)
@@ -178,15 +172,13 @@ function SourceDetail({ reportId, source }) {
     }
   }
 
-  const rows = parsedRows(detail.parsed);
-  const fields = parsedFields(detail.parsed);
   const issues = detail.parsed?.issues || detail.issues || [];
   const parseWarnings = detail.parsed?.parseWarnings || detail.parseWarnings || [];
-  const ledgerStatements = detail.parsed?.ledgerStatements || [];
+  const recordCount = detail.parsed?.recordCount ?? detail.parsed?.records?.length ?? 0;
   return (
     <div className="space-y-4 border-t border-border pt-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h4 className="break-all text-base">{detail.originalName}</h4><p className="text-xs text-muted-foreground">{documentTypeLabel[detail.parsed?.documentType] || roleLabel[detail.role] || detail.role} · <Status value={detail.parsed?.status || detail.parseStatus} /> · {detail.parsed?.recordCount ?? rows.length} parsed rows{detail.parsed?.ocrUsed ? " · Local OCR" : ""}</p></div>
+        <div><h4 className="break-all text-base">{detail.originalName}</h4><p className="text-xs text-muted-foreground">{documentTypeLabel[detail.parsed?.documentType] || roleLabel[detail.role] || detail.role} · <Status value={detail.parsed?.status || detail.parseStatus} /> · {recordCount} financial record{recordCount === 1 ? "" : "s"}{detail.parsed?.ocrUsed ? " · Local OCR" : ""}</p></div>
         <Button variant="outline" size="sm" onClick={showOriginal} disabled={fileLoading}>{fileLoading ? "Loading original…" : "View original file"}</Button>
       </div>
       {error ? <Notice tone="danger" title="Source detail unavailable">{error}</Notice> : null}
@@ -195,10 +187,8 @@ function SourceDetail({ reportId, source }) {
       {(detail.parsed?.status || detail.parseStatus) !== "ready" && (detail.parsed?.recordCount || 0) > 0 ? <Notice tone="info" title="Parsed evidence available">Applicable checks can use these records. Any result based on incomplete coverage is marked provisional; identity or period conflicts still block comparison.</Notice> : null}
       {preflight?.proposedRoles?.length ? <details className="text-sm"><summary className="cursor-pointer">Suggested account roles ({preflight.proposedRoles.length})</summary><p className="mt-1 text-muted-foreground">Suggestions are not applied until an auditor approves a mapping profile.</p><ul className="mt-2 space-y-1">{preflight.proposedRoles.slice(0, 30).map((item) => <li key={item.ledger}>{item.ledger} → {item.suggestedRoles.join(" or ")}</li>)}</ul></details> : null}
       {issues.length ? <Notice tone="warning" title={`${issues.length} parsing issue${issues.length === 1 ? "" : "s"}`}><ul className="list-disc pl-5">{issues.map((issue, index) => <li key={`${issue.code || "issue"}-${index}`}>{issue.rowNumber ? `Row ${issue.rowNumber}: ` : ""}{issue.message || String(issue)}</li>)}</ul></Notice> : null}
-      {ledgerStatements.length ? <details className="space-y-2 text-sm"><summary className="cursor-pointer">Detected ledger sections ({ledgerStatements.length})</summary><Suspense fallback={<PanelLoading label="Loading ledger sections" />}><DocumentGrid fields={["entityName", "ledger", "address", "sheetName", "startRow", "headerRow", "endRow"]} rows={ledgerStatements.map((section) => ({ ...section, address: section.address?.join("; ") || "" }))} /></Suspense></details> : null}
       {fileUrl ? <div className="space-y-2"><a href={fileUrl} download={detail.originalName} className="text-sm underline">Download original file</a>{fileType.includes("pdf") ? <object data={fileUrl} type="application/pdf" className="h-[min(70vh,700px)] w-full border border-border" aria-label={`PDF evidence: ${detail.originalName}`}><p>PDF preview is unavailable. Use the download link above.</p></object> : null}</div> : null}
-      {rawRows.length ? <div className="space-y-2"><h5 className="text-sm">Original extracted rows ({rawTotal})</h5><Suspense fallback={<PanelLoading label="Loading original rows" />}><DocumentGrid fields={[...new Set(rawRows.flatMap((row) => Object.keys(row)))]} rows={rawRows} /></Suspense><div className="flex items-center gap-2"><Button type="button" variant="outline" size="sm" disabled={!rawOffset} onClick={() => setRawOffset(Math.max(0, rawOffset - 100))}>Previous</Button><span className="text-xs text-muted-foreground">{rawOffset + 1}–{Math.min(rawOffset + 100, rawTotal)} of {rawTotal}</span><Button type="button" variant="outline" size="sm" disabled={rawOffset + 100 >= rawTotal} onClick={() => setRawOffset(rawOffset + 100)}>Next</Button></div></div> : null}
-      {rows.length ? <div className="space-y-2"><h5 className="text-sm">Normalized records</h5><Suspense fallback={<PanelLoading label="Loading source rows" />}><DocumentGrid fields={fields} rows={rows} /></Suspense></div> : <p className="text-sm text-muted-foreground">No structured rows are available for this source. The original file remains available as evidence.</p>}
+      <FinancialSourceView parsed={detail.parsed} role={detail.role} />
     </div>
   );
 }
@@ -245,7 +235,7 @@ function MappingPanel({ reportId, onDerived }) {
       const { data } = await scrutinyApi.createProfile({ name: name.trim(), role, configuration });
       await refresh();
       setProfileId(data.profile.id);
-      setNotice(`Created profile version ${data.profile.version}. Inspect original rows before approving it.`);
+      setNotice(`Created profile version ${data.profile.version}. Inspect the structured financial preview and original document before approving it.`);
     } catch (requestError) { setError(errorMessage(requestError, "Profile could not be created. Check the JSON mappings.")); }
     finally { setBusy(false); }
   }
@@ -270,7 +260,7 @@ function MappingPanel({ reportId, onDerived }) {
   }
 
   const activeProfile = profiles.find((profile) => profile.id === profileId);
-  return <Card className="border border-border" aria-labelledby="mapping-heading"><CardHeader><CardTitle id="mapping-heading" className="text-lg">Ledger mapping profiles</CardTitle><p className="text-sm text-muted-foreground">Inspect a source’s original rows, save field and account-role mappings, then explicitly approve the profile. Applying it creates a new source version.</p></CardHeader><CardContent className="space-y-4">
+  return <Card className="border border-border" aria-labelledby="mapping-heading"><CardHeader><CardTitle id="mapping-heading" className="text-lg">Ledger mapping profiles</CardTitle><p className="text-sm text-muted-foreground">Inspect the structured financial preview and original document, save field and account-role mappings, then explicitly approve the profile. Applying it creates a new source version.</p></CardHeader><CardContent className="space-y-4">
     <form onSubmit={createProfile} className="grid gap-3 sm:grid-cols-2">
       <div className="space-y-1"><Label htmlFor="audit-profile-name">Profile name</Label><Input id="audit-profile-name" value={name} onChange={(event) => setName(event.target.value)} required /></div>
       <div className="space-y-1"><Label htmlFor="audit-profile-role">Books role</Label><select id="audit-profile-role" className="h-9 w-full border border-input bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}><option value="books_ledgers">Books ledgers</option><option value="books_vouchers">Books vouchers</option></select></div>
@@ -292,6 +282,7 @@ function MappingPanel({ reportId, onDerived }) {
 function SourcesPanel({ reportId, sources, onRefresh, selectedSourceIds, onSelectionChange, activeSourceId, onActiveSourceChange }) {
   const [file, setFile] = useState(null);
   const [role, setRole] = useState(SOURCE_ROLES[0][0]);
+  const [documentType, setDocumentType] = useState("");
   const [completeExport, setCompleteExport] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -308,9 +299,10 @@ function SourcesPanel({ reportId, sources, onRefresh, selectedSourceIds, onSelec
     setUploading(true);
     let uploaded = false;
     try {
-      const { data } = await scrutinyApi.uploadSource(reportId, file, role, completeExport);
+      const { data } = await scrutinyApi.uploadSource(reportId, file, role, completeExport, "", documentType);
       uploaded = true;
       setFile(null);
+      setDocumentType("");
       setCompleteExport(false);
       formElement.reset();
       onActiveSourceChange(data.source.id);
@@ -342,11 +334,12 @@ function SourcesPanel({ reportId, sources, onRefresh, selectedSourceIds, onSelec
     <Card className="border border-border" aria-labelledby="sources-heading">
       <CardHeader><CardTitle id="sources-heading" className="text-lg">Source evidence</CardTitle><p className="text-sm text-muted-foreground">Upload one file at a time. Mark an export complete only when it covers the full intended period.</p></CardHeader>
       <CardContent className="space-y-5">
-        <form className="grid gap-3 rounded-sm bg-muted/50 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(160px,1fr)_minmax(200px,1fr)_auto]" onSubmit={upload}>
-          <div className="space-y-2"><Label htmlFor="source-role">Source role</Label><select id="source-role" className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value)}>{SOURCE_ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+        <form className="grid gap-3 rounded-sm bg-muted/50 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(160px,1fr)_minmax(200px,1fr)_minmax(200px,1fr)_auto]" onSubmit={upload}>
+          <div className="space-y-2"><Label htmlFor="source-role">Source role</Label><select id="source-role" className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm" value={role} onChange={(event) => { setRole(event.target.value); if (event.target.value !== "supporting_document") setDocumentType(""); }}>{SOURCE_ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div className="space-y-2"><Label htmlFor="supporting-document-type">Support type</Label><select id="supporting-document-type" className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm" value={documentType} onChange={(event) => setDocumentType(event.target.value)} disabled={role !== "supporting_document"}>{SUPPORTING_DOCUMENT_TYPES.map(([value, label]) => <option key={value || "auto"} value={value}>{label}</option>)}</select></div>
           <div className="space-y-2"><Label htmlFor="source-file">File</Label><Input id="source-file" type="file" accept=".json,.csv,.xlsx,.xls,.xml,.pdf,application/json,text/csv,text/xml,application/xml,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setFile(event.target.files?.[0] || null)} required /></div>
           <div className="flex items-end"><Button type="submit" disabled={!file || uploading}><Upload aria-hidden="true" />{uploading ? "Uploading…" : "Upload source"}</Button></div>
-          <div className="flex items-center gap-2 text-sm sm:col-span-2 xl:col-span-3"><Checkbox id="complete-audit-export" checked={completeExport} onCheckedChange={(checked) => setCompleteExport(checked === true)} /><Label htmlFor="complete-audit-export">Complete export for the period</Label></div>
+          <div className="flex items-center gap-2 text-sm sm:col-span-2 xl:col-span-4"><Checkbox id="complete-audit-export" checked={completeExport} onCheckedChange={(checked) => setCompleteExport(checked === true)} /><Label htmlFor="complete-audit-export">Complete export for the period</Label></div>
         </form>
         {error ? <Notice tone="danger" title="Upload failed">{error}</Notice> : null}
         {!sources.length ? <p className="text-sm text-muted-foreground">No sources uploaded yet.</p> : (
@@ -356,7 +349,7 @@ function SourcesPanel({ reportId, sources, onRefresh, selectedSourceIds, onSelec
           </TableRow></TableHeader><TableBody>{sources.map((source) => <TableRow key={source.id} data-state={selectedSet.has(source.id) ? "selected" : undefined}>
             <TableCell><Checkbox id={`audit-source-${source.id}`} checked={selectedSet.has(source.id)} onCheckedChange={() => toggleSource(source.id)} aria-label={`Select ${source.originalName} for run`} /></TableCell>
             <TableCell><Label htmlFor={`audit-source-${source.id}`} className="block max-w-[24rem] cursor-pointer truncate text-sm">{source.originalName}</Label></TableCell>
-            <TableCell className="text-sm">{roleLabel[source.role] || source.role}</TableCell>
+            <TableCell className="text-sm">{documentTypeLabel[source.documentType] || roleLabel[source.role] || source.role}</TableCell>
             <TableCell className="text-sm"><Status value={source.parseStatus} /></TableCell>
             <TableCell><Button variant="ghost" size="sm" onClick={() => onActiveSourceChange(activeSourceId === source.id ? "" : source.id)} aria-expanded={activeSourceId === source.id}>{activeSourceId === source.id ? "Hide" : "Inspect"}</Button></TableCell>
           </TableRow>)}</TableBody></Table></div>
@@ -408,10 +401,10 @@ function RunResults({ reportId, run, results, reviews, sources, loading, error, 
     return <section key={result.id} className="space-y-3 border border-border bg-background p-4" aria-label={`${result.checkId} result`}>
       <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{result.checkId}</Badge><span className="text-sm text-muted-foreground">{checkLabel[result.checkId]}</span><Status value={result.status} /></div>
       <p className="text-sm">{result.summary}</p>
-      {["expectedAmount", "actualAmount", "differenceAmount"].some((key) => result[key] != null) ? <dl className="grid gap-2 text-sm sm:grid-cols-3">{[["Expected", result.expectedAmount], ["Actual", result.actualAmount], ["Difference", result.differenceAmount]].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="tabular-nums">{value ?? "—"}</dd></div>)}</dl> : null}
+      {["expectedAmount", "actualAmount", "differenceAmount"].some((key) => result[key] != null) ? <dl className="grid gap-2 text-sm sm:grid-cols-3">{[["Expected", result.expectedAmount], ["Actual", result.actualAmount], ["Difference", result.differenceAmount]].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="tabular-nums">{formatFinancialValue("amount", value)}</dd></div>)}</dl> : null}
       {result.evidence?.length ? <details className="text-sm"><summary className="cursor-pointer">Evidence ({result.evidence.length})</summary><ul className="mt-2 space-y-2">{result.evidence.map((item, index) => {
         const sourceIds = [...new Set([item.sourceId, ...(item.sourceRefs || []).map((ref) => ref.sourceId)].filter(Boolean))];
-        return <li key={index} className="break-words border-l-2 border-border pl-3 text-muted-foreground"><pre className="whitespace-pre-wrap font-sans text-xs">{JSON.stringify(item, null, 2)}</pre>{sourceIds.map((id) => {
+        return <li key={index} className="space-y-2 break-words rounded-sm border border-border bg-muted/20 p-3"><FinancialEvidence item={item} />{sourceIds.map((id) => {
           const source = sources.find((candidate) => candidate.id === id);
           return source ? <button key={id} type="button" className="mr-3 mt-1 text-xs text-foreground underline" onClick={() => onInspectSource(id)}>Inspect {source.originalName}</button> : null;
         })}</li>;
@@ -487,11 +480,14 @@ function ComparisonGrid({ reportId, runId }) {
   }, [reportId, runId, offset]);
   if (error) return <Notice tone="warning" title="Comparison rows unavailable">{error}</Notice>;
   if (!total) return null;
-  const display = rows.map((row) => ({ fiscalYear: row.financialYear || "", check: row.checkId,
-    status: row.status, comparison: row.comparison || "", measure: row.label || row.ledger || row.category || "",
-    expected: row.expectedAmount ?? "", actual: row.actualAmount ?? "",
-    difference: row.differenceAmount ?? "", reference: row.reference || "",
-    sourceReferences: row.sourceRefs?.length || 0 }));
+  const display = rows.map((row) => ({ "Financial year": row.financialYear || "—", "Check": row.checkId,
+    "Status": String(row.status || "—").replaceAll("_", " "),
+    "Comparison": String(row.comparison || "—").replaceAll("_", " "),
+    "Financial measure": row.label || row.ledger || row.category || row.taxHead || "—",
+    "Expected amount": formatFinancialValue("amount", row.expectedAmount),
+    "Actual amount": formatFinancialValue("amount", row.actualAmount),
+    "Difference": formatFinancialValue("amount", row.differenceAmount),
+    "Reference": row.reference || "—" }));
   return <section className="space-y-2"><h3 className="text-base">Comparison rows ({total})</h3><Suspense fallback={<PanelLoading label="Loading comparisons" />}><DocumentGrid fields={Object.keys(display[0] || {})} rows={display} /></Suspense><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 100))}>Previous</Button><span className="text-xs text-muted-foreground">{offset + 1}–{Math.min(offset + 100, total)} of {total}</span><Button variant="outline" size="sm" disabled={offset + 100 >= total} onClick={() => setOffset(offset + 100)}>Next</Button></div></section>;
 }
 

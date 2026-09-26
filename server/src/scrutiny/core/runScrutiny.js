@@ -2,10 +2,13 @@ import { fromPaise, toPaise } from "./money.js";
 import { fromThousandths, toThousandths } from "./stockWorkbook.js";
 import { reconcileCrossSources } from "./crossSourceReconciliation.js";
 import { hasBlockingSourceIssue, provisionalResult, sourceEligibility } from "./sourceEligibility.js";
+import { compareGstBooksToPortal, reviewAdvanceTaxChallans, reviewBankReconciliation,
+  reviewLoanSchedule, reviewMsmePayments, reviewPriorYearReport, reviewStockRisk,
+  reviewTdsAuditor } from "./advancedScrutiny.js";
 import { compareYearOnYear, reviewDuplicateVouchers, reviewInsurancePrepaid,
   reviewPartySign, reviewPendingGst, reviewPrepaidReversal, reviewSuspense } from "./referenceScrutiny.js";
 
-export const AUDIT_CHECK_IDS = Object.freeze(["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "AIS01", "AIS02", "A26", "G01", "G02", "S01", "T03", "T09", "X01"]);
+export const AUDIT_CHECK_IDS = Object.freeze(["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "PY01", "AIS01", "AIS02", "A26", "G01", "G02", "G03", "S01", "S02", "BK01", "L01", "M01", "AT01", "T03", "T09", "TDS01", "X01"]);
 const COMPARABLE_AIS_CATEGORIES = new Set([
   "INTEREST", "SAVINGS_INTEREST", "TERM_DEPOSIT_INTEREST", "RECURRING_DEPOSIT_INTEREST",
   "DIVIDEND", "RENT", "BUSINESS_RECEIPTS", "OTHER_INCOME",
@@ -853,14 +856,22 @@ const CHECKS = {
   B20: compareBookExportCoverage,
   P01: comparePriorYear,
   P02: compareYearOnYear,
+  PY01: reviewPriorYearReport,
   AIS01: compareAisIncome,
   AIS02: compareAisTurnover,
   A26: compareAisWith26as,
   G01: checkPortalLedger,
   G02: compareBookCashLedger,
+  G03: compareGstBooksToPortal,
   S01: checkStockQuantity,
+  S02: reviewStockRisk,
+  BK01: reviewBankReconciliation,
+  L01: reviewLoanSchedule,
+  M01: reviewMsmePayments,
+  AT01: reviewAdvanceTaxChallans,
   T03: reviewTaxCredits,
   T09: reviewRefundReference,
+  TDS01: reviewTdsAuditor,
   X01: reconcileCrossSources,
 };
 
@@ -872,20 +883,26 @@ function sourcesForCheck(checkId, sources) {
     B09: ["books_ledgers"], B10: ["books_ledgers"], B11: ["books_ledgers"],
     B20: ["books_vouchers", "books_ledgers"],
     P01: ["trial_balance", "prior_year_trial_balance"], P02: ["trial_balance", "prior_year_trial_balance"],
+    PY01: ["trial_balance"],
     AIS01: ["ais", "books_vouchers"], AIS02: ["ais", "books_ledgers", "books_vouchers"],
-    A26: ["ais"], G02: ["books_ledgers"], T09: ["ais"],
+    A26: ["ais"], G02: ["books_ledgers"], G03: ["books_ledgers"], BK01: ["books_ledgers", "books_vouchers"],
+    L01: ["books_ledgers"], AT01: ["books_ledgers", "books_vouchers"],
+    T09: ["ais"], TDS01: ["books_ledgers", "books_vouchers"],
     T03: ["books_ledgers", "books_vouchers"], X01: ["ais", "books_ledgers", "books_vouchers"],
   }[checkId] || [];
   const supportingTypes = {
     A26: ["form_26as"], G01: ["gst_cash_ledger", "gst_credit_ledger"],
-    G02: ["gst_cash_ledger"], S01: ["stock_product_ledger"],
-    T03: ["form_26as"], T09: ["tax_computation"],
+    G02: ["gst_cash_ledger"], G03: ["gst_cash_ledger", "gst_credit_ledger"],
+    S01: ["stock_product_ledger"], S02: ["stock_report", "stock_product_ledger"],
+    BK01: ["bank_statement"], L01: ["loan_schedule"], M01: ["msme_register"],
+    PY01: ["prior_year_report"], AT01: ["tax_challan"],
+    T03: ["form_26as"], T09: ["tax_computation"], TDS01: ["tds_rules"],
   }[checkId] || [];
   return sources.filter((source) => roles.includes(source.role) ||
     source.role === "supporting_document" && (checkId === "X01" || supportingTypes.includes(source.documentType)));
 }
 
-const CROSS_SOURCE_CHECKS = new Set(["B03", "B20", "P01", "P02", "AIS01", "AIS02", "A26", "G01", "G02", "T03", "T09", "X01"]);
+const CROSS_SOURCE_CHECKS = new Set(["B03", "B20", "P01", "P02", "PY01", "AIS01", "AIS02", "A26", "G01", "G02", "G03", "BK01", "L01", "AT01", "T03", "T09", "TDS01", "X01"]);
 
 export function runScrutiny({ sources, checkIds = AUDIT_CHECK_IDS, reportTaxpayerId = null, parameters = {} }) {
   if (!Array.isArray(sources) || !Array.isArray(checkIds)) throw new TypeError("sources and checkIds must be arrays.");

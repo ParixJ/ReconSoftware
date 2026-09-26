@@ -81,6 +81,11 @@ test("auditor creates a scrutiny report, runs a check, and records a review", as
   await page.getByRole("checkbox", { name: "Complete export for the period" }).check();
   await page.getByRole("button", { name: "Upload source" }).click();
   await expect(page.getByRole("checkbox", { name: "Select books_vouchers.json for run" })).toBeVisible();
+  await page.getByRole("button", { name: "Inspect" }).click();
+  await expect(page.getByRole("heading", { name: "Financial records" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Voucher number" })).toBeVisible();
+  await expect(page.getByRole("gridcell", { name: "DEMO-001" }).first()).toBeVisible();
+  await expect(page.getByText("provenance", { exact: true })).toHaveCount(0);
   await page.getByRole("checkbox", { name: "Select books_vouchers.json for run" }).check();
   await page.getByRole("checkbox", { name: /B01.*Voucher balance/ }).check();
   await page.getByRole("button", { name: "Run selected checks" }).click();

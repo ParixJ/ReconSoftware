@@ -43,6 +43,42 @@ function comparisonRows(runs) {
   }));
 }
 
+const MODULE_SHEETS = Object.freeze([
+  { name: "02_MSME", checks: ["M01"] },
+  { name: "03_Insurance_Prepaid", checks: ["B10", "B11"] },
+  { name: "04_GST", checks: ["B09", "G01", "G02", "G03", "AIS02"] },
+  { name: "05_Stock", checks: ["S01", "S02"] },
+  { name: "06_Bank", checks: ["BK01"] },
+  { name: "07_Loans", checks: ["L01"] },
+  { name: "08_Tax_AIS_Challans", checks: ["AIS01", "A26", "AT01", "T03", "T09"] },
+  { name: "09_Prior_Year_YoY", checks: ["P01", "P02", "PY01"] },
+  { name: "10_TDS_Auditor", checks: ["TDS01"] },
+  { name: "11_Book_Controls", checks: ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B20"] },
+  { name: "12_Support_Cross_Source", checks: ["X01"] },
+]);
+
+function addRowsSheet(workbook, name, rows) {
+  const sheet = workbook.addWorksheet(name);
+  sheet.columns = [
+    { header: "Fiscal year", key: "fiscalYear", width: 16 },
+    { header: "Check", key: "checkId", width: 12 },
+    { header: "Status", key: "status", width: 18 },
+    { header: "Comparison", key: "comparison", width: 28 },
+    { header: "Measure", key: "label", width: 42 },
+    { header: "Expected", key: "expectedAmount", width: 18 },
+    { header: "Actual", key: "actualAmount", width: 18 },
+    { header: "Difference", key: "differenceAmount", width: 18 },
+    { header: "Summary", key: "summary", width: 70 },
+    { header: "Evidence JSON", key: "details", width: 90 },
+  ];
+  for (const row of rows) sheet.addRow({ ...row,
+    details: row.details ? JSON.stringify(row.details) : "" });
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.autoFilter = { from: "A1", to: "J1" };
+  sheet.getRow(1).font = { bold: true };
+  return sheet;
+}
+
 async function xlsxBytes(runs) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "ReconSoft";
@@ -58,6 +94,7 @@ async function xlsxBytes(runs) {
   for (const run of runs) for (const result of run.results) summary.addRow({ fiscalYear: run.fiscalYear,
     report: run.reportName, runId: run.id, checkId: result.checkId,
     status: result.status, summary: result.summary });
+  const allRows = comparisonRows(runs);
   const detail = workbook.addWorksheet("Comparisons");
   detail.columns = [
     { header: "Fiscal year", key: "fiscalYear", width: 16 },
@@ -73,8 +110,12 @@ async function xlsxBytes(runs) {
     { header: "Source references", key: "refs", width: 90 },
     { header: "Evidence JSON", key: "details", width: 90 },
   ];
-  for (const row of comparisonRows(runs)) detail.addRow({ ...row,
+  for (const row of allRows) detail.addRow({ ...row,
     refs: JSON.stringify(row.sourceRefs), details: row.details ? JSON.stringify(row.details) : "" });
+  for (const module of MODULE_SHEETS) {
+    const selected = allRows.filter((row) => module.checks.includes(row.checkId));
+    addRowsSheet(workbook, module.name, selected);
+  }
   for (const sheet of [summary, detail]) {
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     sheet.autoFilter = { from: "A1", to: `${sheet === summary ? "F" : "L"}1` };

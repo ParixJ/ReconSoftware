@@ -15,6 +15,17 @@ export const SOURCE_ROLES = [
   ["supporting_document", "Supporting document · auto-detect"],
 ];
 
+export const SUPPORTING_DOCUMENT_TYPES = [
+  ["", "Auto-detect known PDF/XLSX support"],
+  ["prior_year_report", "Prior-year audit report"],
+  ["msme_register", "MSME register / payment ageing"],
+  ["bank_statement", "Bank statement"],
+  ["loan_schedule", "Loan schedule"],
+  ["stock_report", "Stock report"],
+  ["tax_challan", "Tax / GST-TDS challans"],
+  ["tds_rules", "TDS rules / overrides"],
+];
+
 export const AUDIT_CHECKS = [
   ["B01", "Voucher balance"],
   ["B02", "Ledger roll-forward"],
@@ -30,14 +41,22 @@ export const AUDIT_CHECKS = [
   ["B20", "Voucher versus ledger-export coverage"],
   ["P01", "Prior-year comparison"],
   ["P02", "Year-on-year ledger changes"],
+  ["PY01", "Prior-year report disclosures"],
   ["AIS01", "AIS income comparison"],
   ["AIS02", "AIS GST-turnover control"],
   ["A26", "AIS versus Form 26AS candidates"],
   ["G01", "GST portal-ledger roll-forward"],
   ["G02", "Books versus GST cash ledger"],
+  ["G03", "GST cash/credit books versus portal"],
   ["S01", "Product quantity roll-forward"],
+  ["S02", "Stock risk review"],
+  ["BK01", "Bank statement review"],
+  ["L01", "Loan schedule review"],
+  ["M01", "MSME payment ageing"],
+  ["AT01", "Advance-tax / challan review"],
   ["T03", "TDS/TCS book-credit review"],
   ["T09", "Refund reference review"],
+  ["TDS01", "TDS auditor applicability"],
   ["X01", "Books versus supporting sources"],
 ];
 
@@ -55,12 +74,13 @@ export function buildReportRequest({ name, fiscalYear, taxpayerId }) {
   };
 }
 
-export function buildSourceUploadForm(file, role, completeExport, profileId = "") {
+export function buildSourceUploadForm(file, role, completeExport, profileId = "", documentType = "") {
   const form = new FormData();
   form.append("file", file);
   form.append("role", role);
   form.append("completeExport", String(Boolean(completeExport)));
   if (profileId) form.append("profileId", profileId);
+  if (documentType) form.append("documentType", documentType);
   return form;
 }
 
@@ -76,8 +96,8 @@ export const scrutinyApi = {
   listReports: () => api.get(base),
   createReport: (values) => api.post(base, buildReportRequest(values)),
   getReport: (reportId) => api.get(reportPath(reportId)),
-  uploadSource: (reportId, file, role, completeExport, profileId) => api.post(
-    `${reportPath(reportId)}/sources`, buildSourceUploadForm(file, role, completeExport, profileId),
+  uploadSource: (reportId, file, role, completeExport, profileId, documentType) => api.post(
+    `${reportPath(reportId)}/sources`, buildSourceUploadForm(file, role, completeExport, profileId, documentType),
     { timeout: 180000 },
   ),
   getSource: (reportId, sourceId) => api.get(sourcePath(reportId, sourceId)),

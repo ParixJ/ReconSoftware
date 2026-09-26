@@ -4,7 +4,7 @@ import { api } from "../src/api/client.js";
 import { AUDIT_CHECKS, buildReportRequest, buildRunRequest, buildSourceUploadForm, isTerminalRun, latestReviewFor, parsedFields, parsedRows, scrutinyApi } from "../src/api/scrutiny.js";
 
 test("scrutiny request builders preserve the public API fields", () => {
-  assert.deepEqual(AUDIT_CHECKS.map(([id]) => id), ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "AIS01", "AIS02", "A26", "G01", "G02", "S01", "T03", "T09", "X01"]);
+  assert.deepEqual(AUDIT_CHECKS.map(([id]) => id), ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "PY01", "AIS01", "AIS02", "A26", "G01", "G02", "G03", "S01", "S02", "BK01", "L01", "M01", "AT01", "T03", "T09", "TDS01", "X01"]);
   assert.deepEqual(buildReportRequest({ name: "  Annual audit ", fiscalYear: " 2024-2025 ", taxpayerId: " ab123 " }), {
     name: "Annual audit", fiscalYear: "2024-2025", taxpayerId: "AB123",
   });

@@ -209,6 +209,8 @@ test("reference matching supports splits and reports both unmatched sides and am
   const byRef = new Map(rows.map((row) => [row.reference, row]));
   assert.equal(byRef.get("INV-1").comparison, "matched");
   assert.equal(byRef.get("INV-1").bookRecordCount, 2);
+  assert.deepEqual(byRef.get("INV-1").actualEntries.map((row) => row.amount), ["40.00", "60.00"]);
+  assert.deepEqual(byRef.get("INV-1").expectedEntries.map((row) => row.amount), ["100.00"]);
   assert.equal(byRef.get("BOOK-ONLY").comparison, "unmatched_books");
   assert.equal(byRef.get("SUPPORT-ONLY").comparison, "unmatched_support");
   assert.equal(byRef.get("AMB-1").comparison, "ambiguous");

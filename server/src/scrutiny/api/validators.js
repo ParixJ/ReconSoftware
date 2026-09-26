@@ -2,6 +2,7 @@ import { AppError } from "../../errors.js";
 import { ERROR_CODES } from "../../api/errorCodes.js";
 import {
   AUDIT_REVIEW_DECISION_REQUEST_SCHEMA,
+  AUDIT_SUPPORTING_DOCUMENT_TYPES,
   CREATE_AUDIT_PROFILE_REQUEST_SCHEMA,
   CREATE_AUDIT_EXPORT_REQUEST_SCHEMA,
   CREATE_AUDIT_REPORT_REQUEST_SCHEMA,
@@ -107,8 +108,21 @@ export function validateUploadAuditSourceMetadata(body) {
     ...(body.completeExport === "true" ? { completeExport: true }
       : body.completeExport === "false" ? { completeExport: false } : {}),
   } : body;
-  return validatedRequest(UPLOAD_AUDIT_SOURCE_METADATA_SCHEMA, normalized,
+  const value = validatedRequest(UPLOAD_AUDIT_SOURCE_METADATA_SCHEMA, normalized,
     "INVALID_AUDIT_SOURCE_ROLE", "Choose a supported audit source role and completeness declaration.");
+  if (value.documentType && value.role !== "supporting_document") {
+    throw new AppError(400, ERROR_CODES.INVALID_AUDIT_SOURCE_ROLE,
+      "Only supporting documents may include a supporting document type.", {
+        issues: [{ path: "$.documentType", message: "is only valid for supporting documents" }],
+      });
+  }
+  if (value.role === "supporting_document" && value.documentType &&
+      !AUDIT_SUPPORTING_DOCUMENT_TYPES.includes(value.documentType)) {
+    throw new AppError(400, ERROR_CODES.INVALID_AUDIT_SOURCE_ROLE, "Choose a supported supporting document type.", {
+      issues: [{ path: "$.documentType", message: "must be a supported supporting document type" }],
+    });
+  }
+  return value;
 }
 
 const profileFields = new Set(["voucherId", "ledger", "side", "amount", "date", "voucherType",
@@ -118,7 +132,9 @@ const profileFields = new Set(["voucherId", "ledger", "side", "amount", "date", 
 export const AUDIT_ACCOUNT_ROLES = Object.freeze(["sales", "business_receipts", "purchases", "gst_cash_igst",
   "gst_cash_cgst", "gst_cash_sgst", "gst_cash_cess", "gst_credit_igst",
   "gst_credit_cgst", "gst_credit_sgst", "gst_credit_cess", "tds_receivable",
-  "tcs_receivable", "interest_income", "stock", "other"]);
+  "tcs_receivable", "tds_payable", "interest_income", "interest_expense", "stock",
+  "cash", "bank", "advance_tax", "gst_tds_payable", "loan", "secured_loan", "unsecured_loan",
+  "professional_fees", "contractor", "rent", "commission", "other"]);
 
 export function validateCreateAuditProfileRequest(body) {
   const normalized = plainObject(body) && typeof body.name === "string" ?

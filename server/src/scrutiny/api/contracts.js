@@ -1,6 +1,9 @@
 // Wire contracts use decimal strings for amounts to avoid JSON floating-point loss.
 export const AUDIT_SOURCE_ROLES = Object.freeze(["books_vouchers", "books_ledgers", "trial_balance", "prior_year_trial_balance", "ais", "supporting_document"]);
-export const AUDIT_CHECK_IDS = Object.freeze(["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "AIS01", "AIS02", "A26", "G01", "G02", "S01", "T03", "T09", "X01"]);
+export const AUDIT_SUPPORTING_DOCUMENT_TYPES = Object.freeze(["ais", "tis", "form_26as", "tax_computation",
+  "gst_cash_ledger", "gst_credit_ledger", "stock_product_ledger", "audit_queries", "prior_year_report",
+  "msme_register", "bank_statement", "loan_schedule", "stock_report", "tax_challan", "tds_rules"]);
+export const AUDIT_CHECK_IDS = Object.freeze(["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B20", "P01", "P02", "PY01", "AIS01", "AIS02", "A26", "G01", "G02", "G03", "S01", "S02", "BK01", "L01", "M01", "AT01", "T03", "T09", "TDS01", "X01"]);
 export const AUDIT_RUN_STATUSES = Object.freeze(["queued", "running", "completed", "failed"]);
 export const AUDIT_RESULT_STATUSES = Object.freeze(["matched", "difference", "review", "insufficient_data"]);
 export const AUDIT_REVIEW_DECISIONS = Object.freeze(["confirmed", "dismissed", "needs_follow_up"]);
@@ -10,6 +13,7 @@ const dateTime = Object.freeze({ type: "string", format: "date-time" });
 const decimal = Object.freeze({ type: "string", pattern: "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$" });
 const fiscalYear = Object.freeze({ type: "string", pattern: "^\\d{4}-\\d{4}$", format: "fiscal-year" });
 const sourceRole = Object.freeze({ type: "string", enum: AUDIT_SOURCE_ROLES });
+const supportingDocumentType = Object.freeze({ type: "string", enum: AUDIT_SUPPORTING_DOCUMENT_TYPES });
 const checkId = Object.freeze({ type: "string", enum: AUDIT_CHECK_IDS });
 const auditRunParameters = Object.freeze({
   type: "object", additionalProperties: false,
@@ -66,7 +70,8 @@ export const CREATE_AUDIT_REPORT_REQUEST_SCHEMA = Object.freeze({
 // Multipart upload supplies exactly one `file` part separately from these fields.
 export const UPLOAD_AUDIT_SOURCE_METADATA_SCHEMA = Object.freeze({
   type: "object", required: ["role"], additionalProperties: false,
-  properties: { role: sourceRole, completeExport: { type: "boolean" }, profileId: identifier },
+  properties: { role: sourceRole, completeExport: { type: "boolean" }, profileId: identifier,
+    documentType: supportingDocumentType },
 });
 
 export const CREATE_AUDIT_PROFILE_REQUEST_SCHEMA = Object.freeze({
@@ -127,6 +132,7 @@ export const AUDIT_SOURCE_SCHEMA = Object.freeze({
     role: sourceRole,
     originalName: { type: "string", minLength: 1, maxLength: 255 },
     mimeType: { type: "string", minLength: 1, maxLength: 255 },
+    documentType: { type: "string", nullable: true },
     fileType: { type: "string", minLength: 1 },
     sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
     parserVersion: { type: "string", minLength: 1 },

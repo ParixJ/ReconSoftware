@@ -60,11 +60,15 @@ function hydratedParsed(db, row) {
   return flagLegacyBalanceInference(parsed, row);
 }
 
-const sourceView = (r, full = false) => ({ id: r.id, reportId: r.report_id, role: r.role,
+const sourceView = (r, full = false) => {
+  const parsedMetadata = decode(r.parsed_json, {});
+  return { id: r.id, reportId: r.report_id, role: r.role,
   originalName: r.original_name, mimeType: r.mime_type, fileType: r.file_type,
+  documentType: parsedMetadata.documentType ?? null,
   sizeBytes: r.size_bytes, sha256: r.sha256, parserVersion: r.parser_version, parseStatus: r.status,
   issues: decode(r.issues_json, []), createdAt: r.created_at,
-  ...(full ? { parsed: hydratedParsed(getDb(), r) } : {}) });
+  ...(full ? { parsed: hydratedParsed(getDb(), r) } : {}) };
+};
 const profileView = (row) => ({ id: row.id, name: row.name, version: row.version,
   role: row.role, configuration: decode(row.configuration_json, {}), status: row.status,
   createdAt: row.created_at, approvedAt: row.approved_at });

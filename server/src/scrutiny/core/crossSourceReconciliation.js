@@ -1,4 +1,5 @@
 import { fromPaise, toPaise } from "./money.js";
+import { comparisonEntry } from "./comparisonReport.js";
 import { hasConflictingSourceIssue, provisionalResult, sourceEligibility } from "./sourceEligibility.js";
 
 const ROLE_DIRECTION = new Map([
@@ -117,11 +118,15 @@ export function matchReferencedTransactions(bookRows, supportRows, { role, year,
     const comparison = quality !== "verified" && ["unmatched_support", "unmatched_books"].includes(baseComparison) ?
       "review" : baseComparison;
     return { label: `${role} reference ${group.reference || "missing"}`, financialYear: year,
-      accountRole: role, reference: group.reference, taxPeriod: group.taxPeriod, comparison,
+      accountRole: role, reference: group.reference, taxPeriod: group.taxPeriod,
+      comparisonKey: `${group.reference || "missing"}:${group.taxPeriod || "UNKNOWN"}`, comparison,
       ...(comparison !== baseComparison ? { reviewReason: baseComparison } : {}),
       bookRecordCount: group.books.length, supportRecordCount: group.support.length,
       expectedAmount: fromPaise(supportAmount), actualAmount: fromPaise(bookAmount),
       differenceAmount: fromPaise(bookAmount - supportAmount),
+      expectedEntries: group.support.map((row) => comparisonEntry(row, toPaise(row.amount), "supporting")).slice(0, 25),
+      actualEntries: group.books.map((row) => comparisonEntry(row,
+        (row.side === ROLE_DIRECTION.get(role) ? 1n : -1n) * toPaise(row.amount), "books")).slice(0, 25),
       sourceRefs: [...group.books, ...group.support].map((row) => row.provenance).filter(Boolean).slice(0, 100) };
   });
 }

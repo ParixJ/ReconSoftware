@@ -58,7 +58,7 @@ function sourceFiscalYear(report, role) {
 }
 
 function expectedParsedYear(report, role, parsed) {
-  if (role === "prior_year_trial_balance" || parsed.documentType === "tax_computation") {
+  if (role === "prior_year_trial_balance" || ["tax_computation", "prior_year_report"].includes(parsed.documentType)) {
     const start = Number(report.fiscalYear.slice(0, 4));
     return `${start - 1}-${start}`;
   }
@@ -171,6 +171,7 @@ router.post("/:reportId/sources", upload.single("file"), async (req, res, next) 
       sourceId,
       fiscalYear: sourceFiscalYear(report, metadata.role),
       completeExport: metadata.completeExport,
+      documentType: metadata.documentType,
       profile: profile?.configuration,
     }));
     if (profile) parsed.mappingProfile = { id: profile.id, version: profile.version };
@@ -207,6 +208,7 @@ router.post("/:reportId/sources/derive", async (req, res, next) => {
     const parsed = await withAuditParseSlot(() => parseAuditSource({ filePath, originalName: original.originalName,
       role: original.role, sourceId, fiscalYear: sourceFiscalYear(report, original.role),
       completeExport: body.completeExport,
+      documentType: original.parsed?.documentType || null,
       profile: profile?.configuration || null }));
     if (profile) parsed.mappingProfile = { id: profile.id, version: profile.version };
     verifyParsedIdentity(report, original.role, parsed);
